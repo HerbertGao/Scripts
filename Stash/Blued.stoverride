@@ -12,5 +12,5 @@ http:
       timeout: 10
 script-providers:
   blued:
-    url: https://raw.githubusercontent.com/app2smile/rules/master/js/bilibili-json.js
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js
     interval: 172800
