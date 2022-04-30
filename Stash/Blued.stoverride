@@ -10,6 +10,7 @@ http:
       type: response
       require-body: true
       timeout: 10
+
 script-providers:
   blued:
     url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js
