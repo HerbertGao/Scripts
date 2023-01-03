@@ -7,7 +7,7 @@ http:
   script:
     - match: ^https:\/\/.*burn-chatfiles\.bldimg\.com\/
       name: blued.js
-      type: request
+      type: response
       require-body: false
       timeout: 30
 
