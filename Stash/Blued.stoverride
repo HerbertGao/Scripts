@@ -1,5 +1,5 @@
 name: Blued闪照
-desc: Blued闪照转通知，可多次查看
+desc: Blued闪照转通知
 
 http:
   mitm:
