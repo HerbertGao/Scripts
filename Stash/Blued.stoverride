@@ -4,7 +4,7 @@ desc: Blued闪照
 
 http:
   mitm:
-    - "*burn-chatfiles.bldimg.com"
+    - "burn-chatfiles.bldimg.com"
   script:
     - match: ^https:\/\/burn-chatfiles\.bldimg\.com\/
       name: blued.js
