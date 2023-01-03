@@ -6,13 +6,14 @@ http:
   mitm:
     - "*burn-chatfiles.bldimg.com"
   script:
-    - match: ^https?://.*burn-chatfiles\.bldimg\.com/
-      name: blued
+    - match: ^https:\/\/.*burn-chatfiles\.bldimg\.com\/
+      name: blued.js
       type: response
       require-body: true
-      timeout: 120
+      timeout: 30
+      max-size: 0
 
 script-providers:
-  blued:
+  blued.js:
     url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js
-    interval: 172800
+    interval: 86400
