@@ -73,10 +73,14 @@ function tool() {
             })
         }
     }
-    return {isQuanX, isSurge, isResponse, notify, write, read, get, post}
+    const done = (value = {}) => {
+        if (isQuanX) return $done(value)
+        if (isSurge) isRequest ? $done(value) : $done()
+    }
+    return {isQuanX, isSurge, isResponse, notify, write, read, get, post, done}
 }
 
-async function launch() {
+(async function launch() {
     $tool.notify("已启动", "测试", null)
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
@@ -86,8 +90,8 @@ async function launch() {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
         console.log(url)
     }
-    $done();
-}
-
-launch()
-
+})().catch(e => {
+    $tool.notify("🐔", "", e.message)
+}).finally(() => {
+    $tool.done();
+})
