@@ -10,7 +10,6 @@ http:
       type: response
       require-body: true
       timeout: 30
-      max-size: 0
 
 script-providers:
   blued.js:
