@@ -3,16 +3,12 @@ const headers = $request.headers;
 const $tool = tool();
 
 (async function launch() {
-    console.log("$request:" + $request)
-    console.log("url:" + url)
-    console.log("headers:" + headers)
+    console.log("$request:" + JSON.stringify($request))
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
-        console.log(url)
     }
     if (headers['User-Agent'].indexOf("Media") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
-        console.log(url)
     }
 })().catch(e => {
     $tool.notify("🐔", "", e.message || JSON.stringify(e))
