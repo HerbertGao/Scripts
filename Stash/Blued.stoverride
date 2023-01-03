@@ -1,11 +1,12 @@
-name: Blued
+#SUBSCRIBED https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Stash/Blued.stoverride
+name: Blued闪照
 desc: Blued闪照
 
 http:
   mitm:
     - "*burn-chatfiles.bldimg.com"
   script:
-    - match: ^https:\/\/.*burn-chatfiles\.bldimg\.com\/
+    - match: ^https?://.*burn-chatfiles\.bldimg\.com/
       name: blued
       type: response
       require-body: true
