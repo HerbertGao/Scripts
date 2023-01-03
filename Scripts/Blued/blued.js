@@ -3,6 +3,7 @@ const headers = $request.headers;
 const $tool = tool();
 
 (async function launch() {
+    console.log("$request:" + $request)
     console.log("url:" + url)
     console.log("headers:" + headers)
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
