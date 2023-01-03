@@ -2,9 +2,9 @@ const url = $request.url;
 let headers = $request.headers;
 const $tool = tool();
 
-console.log("isRequest:" + $tool.isRequest)
-console.log("isSurge:" + $tool.isSurge)
-console.log("isQuanX:" + $tool.isQuanX)
+console.info("isRequest:" + $tool.isRequest)
+console.info("isSurge:" + $tool.isSurge)
+console.info("isQuanX:" + $tool.isQuanX)
 
 (async function launch() {
     console.log("$request:" + JSON.stringify($request))
