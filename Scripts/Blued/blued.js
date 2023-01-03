@@ -7,11 +7,11 @@ const $tool = tool();
     console.log("url:" + url)
     console.log("headers:" + headers)
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
-        $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
+        $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
         console.log(url)
     }
     if (headers['User-Agent'].indexOf("Media") !== -1) {
-        $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
+        $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
         console.log(url)
     }
 })().catch(e => {
