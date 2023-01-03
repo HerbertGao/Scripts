@@ -2,12 +2,7 @@ const url = $request.url;
 let headers = $request.headers;
 const $tool = tool();
 
-console.log("isRequest:" + $tool.isRequest);
-console.log("isSurge:" + $tool.isSurge);
-console.log("isQuanX:" + $tool.isQuanX);
-
 (async function launch() {
-    console.log("$request:" + JSON.stringify($request))
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
     }
