@@ -6,11 +6,9 @@ const $tool = tool();
     $tool.notify("已启动", "测试", null)
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
-        console.log(url)
     }
     if (headers['User-Agent'].indexOf("Media") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
-        console.log(url)
     }
 })().catch(e => {
     $tool.notify("🐔", "", e.message || JSON.stringify(e))

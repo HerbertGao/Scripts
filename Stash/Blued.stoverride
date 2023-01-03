@@ -3,13 +3,14 @@ desc: Blued闪照转通知，可多次查看
 
 http:
   mitm:
-    - "burn-chatfiles.bldimg.com"
+    - "*burn-chatfiles.bldimg.com"
   script:
-    - match: ^https:\/\/burn-chatfiles\.bldimg\.com\/
+    - match: ^https:\/\/.*burn-chatfiles\.bldimg\.com\/
       name: blued.js
       type: response
       require-body: true
       timeout: 30
+      max-size: 0
 
 script-providers:
   blued.js:
