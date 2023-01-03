@@ -1,0 +1,9 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/QuantumultX/blued.confqx
+#!name= Blued闪照
+#!desc= Blued闪照转通知，可多次查看
+
+[Script]
+blued = type=http-response,pattern=^https:\/\/.*burn-chatfiles\.bldimg\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% *burn-chatfiles.bldimg.com
