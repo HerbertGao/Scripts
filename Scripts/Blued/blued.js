@@ -1,5 +1,6 @@
 const url = $request.url;
-let headers = $request.headers;
+const headers = $request.headers;
+const $tool = tool();
 
 function tool() {
     const isSurge = typeof $httpClient != "undefined"
@@ -78,11 +79,11 @@ function tool() {
 
 async function launch() {
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
-        notify("🐔", "点击跳转到浏览器打开看图", url);
+        $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
         console.log(url)
     }
     if (headers['User-Agent'].indexOf("Media") !== -1) {
-        notify("🐔", "点击跳转到浏览器打开看图", url);
+        $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
         console.log(url)
     }
     $done();
