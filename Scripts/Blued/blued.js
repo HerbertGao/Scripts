@@ -7,7 +7,7 @@ console.info("isSurge:" + $tool.isSurge)
 console.info("isQuanX:" + $tool.isQuanX)
 
 (async function launch() {
-    console.log("$request:" + JSON.stringify($request))
+    console.info("$request:" + JSON.stringify($request))
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url, url);
     }
