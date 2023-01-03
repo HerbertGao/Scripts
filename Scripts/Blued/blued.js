@@ -9,7 +9,7 @@ function tool() {
     const node = (() => {
         if (typeof require == "function") {
             const request = require('request')
-            return ({ request })
+            return ({request})
         } else {
             return (null)
         }
@@ -17,7 +17,7 @@ function tool() {
     const notify = (title, subtitle, message) => {
         if (isQuanX) $notify(title, subtitle, message)
         if (isSurge) $notification.post(title, subtitle, message)
-        if (node) console.log(JSON.stringify({ title, subtitle, message }));
+        if (node) console.log(JSON.stringify({title, subtitle, message}));
     }
     const write = (value, key) => {
         if (isQuanX) return $prefs.setValueForKey(value, key)
@@ -39,7 +39,7 @@ function tool() {
     }
     const get = (options, callback) => {
         if (isQuanX) {
-            if (typeof options == "string") options = { url: options }
+            if (typeof options == "string") options = {url: options}
             options["method"] = "GET"
             $task.fetch(options).then(response => {
                 callback(null, adapterStatus(response), response.body)
@@ -56,7 +56,7 @@ function tool() {
     }
     const post = (options, callback) => {
         if (isQuanX) {
-            if (typeof options == "string") options = { url: options }
+            if (typeof options == "string") options = {url: options}
             options["method"] = "POST"
             $task.fetch(options).then(response => {
                 callback(null, adapterStatus(response), response.body)
@@ -73,11 +73,11 @@ function tool() {
             })
         }
     }
-    return { isQuanX, isSurge, isResponse, notify, write, read, get, post }
+    return {isQuanX, isSurge, isResponse, notify, write, read, get, post}
 }
 
-
 async function launch() {
+    $tool.notify("已启动", "测试", null)
     if (headers['User-Agent'].indexOf("Blued") !== -1) {
         $tool.notify("🐔", "点击跳转到浏览器打开看图", url);
         console.log(url)
