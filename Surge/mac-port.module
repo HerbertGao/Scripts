@@ -5,5 +5,5 @@
 
 [General]
 # macOS Only
-http-listen = 0.0.0.0:7891
-socks5-listen = 0.0.0.0:7890
+http-listen = 0.0.0.0:7890
+socks5-listen = 0.0.0.0:7891
