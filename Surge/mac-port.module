@@ -1,0 +1,9 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/mac-port.module
+#!name=Mac Setting
+#!desc=Mac 代理设置
+#!system=mac
+
+[General]
+# macOS Only
+http-listen = 0.0.0.0:7891
+socks5-listen = 0.0.0.0:7890
