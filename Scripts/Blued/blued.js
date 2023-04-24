@@ -3,10 +3,11 @@ let headers = $request.headers;
 const $ = new Env("blued.js");
 
 (async function launch() {
-    if (headers['user-agent'].indexOf("Blued") !== -1) {
+  const userAgent = headers['user-agent'] !== undefined ? 'user-agent' : 'User-Agent'
+    if (headers[userAgent].indexOf("Blued") !== -1) {
         $.msg("🐔", "点击跳转到浏览器打开看图", url, url);
     }
-    if (headers['user-agent'].indexOf("Media") !== -1) {
+    if (headers[userAgent].indexOf("Media") !== -1) {
         $.msg("🐔", "点击跳转到浏览器打开看图", url, url);
     }
 })().catch(e => {
