@@ -1,0 +1,16 @@
+name: SubApp阅后即焚
+desc: SubApp阅后即焚转通知
+
+http:
+  mitm:
+    - "rongcloud-spic.ronghub.com"
+  script:
+    - match: ^http:\/\/.rongcloud-spic\.ronghub\.com\/
+      name: subapp.js
+      type: response
+      require-body: true
+
+script-providers:
+  subapp.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SubApp/subapp.js
+    interval: 86400
