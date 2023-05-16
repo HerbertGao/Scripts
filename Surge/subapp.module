@@ -3,7 +3,7 @@
 #!desc= SubApp阅后即焚转通知
 
 [Script]
-subapp = type=http-response,pattern=^http:\/\/.rongcloud-spic\.ronghub\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SubApp/subapp.js,script-update-interval=0
+subapp = type=http-response,pattern=^http:\/\/rongcloud-spic\.ronghub\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SubApp/subapp.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% rongcloud-spic.ronghub.com
