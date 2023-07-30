@@ -4,7 +4,9 @@ const $ = new Env("htknow.js");
 (async function launch() {
     let obj = JSON.parse(body);
     obj['app_name'] = 'douyin';
-    body = JSON.stringify(obj)
+    body = JSON.stringify(obj);
+})().catch(e => {
+    $.msg("htknow.js", "", e.message || JSON.stringify(e))
 }).finally(() => {
     $.done({body});
 })
