@@ -2,7 +2,10 @@ let url = $request.url;
 const $ = new Env("htknow.video.js");
 
 (async function launch() {
-    $.msg("海豚知道", "点击跳转浏览器打开看视频", url, url);
+    const userAgent = headers['user-agent'] !== undefined ? 'user-agent' : 'User-Agent'
+    if (headers[userAgent].indexOf("MicroMessenger") !== -1) {
+        $.msg("海豚知道", "点击跳转浏览器打开看视频", url, url);
+    }
 })().catch(e => {
     $.msg("htknow.video.js", "", e.message || JSON.stringify(e))
 }).finally(() => {
