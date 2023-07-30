@@ -1,12 +1,12 @@
 let body = $request.body;
-const $ = new Env("htknow.js");
+const $ = new Env("htknow.douyin.js");
 
 (async function launch() {
-    let obj = JSON.parse(body);
+    let obj = $.toObj(body);
     obj['app_name'] = 'douyin';
-    body = JSON.stringify(obj);
+    body = $.toStr(obj);
 })().catch(e => {
-    $.msg("htknow.js", "", e.message || JSON.stringify(e))
+    $.msg("htknow.douyin.js", "", e.message || JSON.stringify(e))
 }).finally(() => {
     $.done({body});
 })
