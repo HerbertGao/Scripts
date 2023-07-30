@@ -4,7 +4,7 @@
 
 [Script]
 htknow.douyin = type=http-request,pattern=^https:\/\/saas\.clientapi\.htknow\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.douyin.js,script-update-interval=0
-htknow.video = type=http-response,pattern=^https:\/\/qiniu\.htknow\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.video.js,script-update-interval=0
+htknow.video = type=http-response,pattern=^https:\/\/qiniu\.htknow\.com\/,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.video.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% saas.clientapi.htknow.com, qiniu.htknow.com
