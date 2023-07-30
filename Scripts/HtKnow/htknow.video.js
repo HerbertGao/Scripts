@@ -1,4 +1,5 @@
 let url = $request.url;
+let headers = $request.headers;
 const $ = new Env("htknow.video.js");
 
 (async function launch() {
