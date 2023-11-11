@@ -3,7 +3,7 @@
 #!desc= Blued闪照转通知
 
 [Script]
-blued = type=http-response,pattern=^https:\/\/.*burn-chatfiles\.bldimg\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js,script-update-interval=0
+blued = type=http-response,pattern=^https:\/\/.*burn-chatfiles\.bldimg\.com\/,requires-body=1,max-size=31457280,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% *burn-chatfiles.bldimg.com
