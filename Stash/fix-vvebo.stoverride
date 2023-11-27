@@ -13,6 +13,11 @@ http:
       name: fix-vvebo-user-timeline
       type: request
       timeout: 10
+    - match: ^https:\/\/api\.weibo\.cn\/2\/statuses\/user_timeline\?
+      name: fix-vvebo-user-timeline
+      type: response
+      require-body: true
+      timeout: 10
     - match: ^https:\/\/api\.weibo\.cn\/2\/profile\/statuses\/tab\?
       name: fix-vvebo-user-timeline
       type: response
