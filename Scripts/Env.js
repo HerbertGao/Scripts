@@ -1,5 +1,3 @@
-// https://github.com/chavyleung/scripts/blob/master/Env.js
-
 function Env(name, opts) {
     class Http {
         constructor(env) {
@@ -320,6 +318,9 @@ function Env(name, opts) {
                 // HTTP/2 全是小写
                 delete request.headers['content-type']
                 delete request.headers['content-length']
+            }
+            if (request.params) {
+                request.url += '?' + this.queryStr(request.params)
             }
             switch (this.getEnv()) {
                 case 'Surge':
@@ -700,7 +701,6 @@ function Env(name, opts) {
                     break
                 case 'Node.js':
                     process.exit(1)
-                    break
             }
         }
     })(name, opts)
