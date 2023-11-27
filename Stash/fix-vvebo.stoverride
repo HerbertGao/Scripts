@@ -1,0 +1,25 @@
+name: 修复 VVebo
+desc: 修复 VVebo 用户时间线
+
+http:
+  mitm:
+    - api.weibo.cn
+  script:
+    - match: ^https:\/\/api\.weibo\.cn\/2\/users\/show\?
+      name: fix-vvebo-user-timeline
+      type: request
+      timeout: 10
+    - match: ^https:\/\/api\.weibo\.cn\/2\/statuses\/user_timeline\?
+      name: fix-vvebo-user-timeline
+      type: request
+      timeout: 10
+    - match: ^https:\/\/api\.weibo\.cn\/2\/profile\/statuses\/tab\?
+      name: fix-vvebo-user-timeline
+      type: response
+      require-body: true
+      timeout: 10
+
+script-providers:
+  fix-vvebo-user-timeline:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Vvebo/fix-vvebo-user-timeline.js
+    interval: 86400
