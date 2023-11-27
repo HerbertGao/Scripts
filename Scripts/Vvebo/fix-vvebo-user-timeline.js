@@ -4,10 +4,10 @@ const $ = new Env("fix-vvebo-user-timeline.js");
 let hasUid = (url) => url.includes("uid");
 let getUid = (url) => (hasUid(url) ? url.match(/uid=(\d+)/)[1] : undefined);
 if (url.includes("users/show")) {
-    $.setdata(getUid(url), "uid");
+    $.setval(getUid(url), "uid");
     $.done({});
 } else if (url.includes("statuses/user_timeline")) {
-    let uid = getUid(url) || $.getdata("uid");
+    let uid = getUid(url) || $.getval("uid");
     url = url.replace("statuses/user_timeline", "profile/statuses/tab").replace("max_id", "since_id");
     url = url + `&containerid=230413${uid}_-_WEIBO_SECOND_PROFILE_WEIBO`;
     $.done({ url });
