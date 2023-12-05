@@ -3,7 +3,7 @@
 #!desc= 圣魔 闪照转通知
 
 [Script]
-subapp = type=http-response,pattern=^https?:\/\/shengmo2\.\w+\.aliyuncs\.com\/Uploads\/Fastphoto.*,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Shengmo/shengmo.js,script-update-interval=0
+shengmo = type=http-response,pattern=^https?:\/\/shengmo2\.\w+\.aliyuncs\.com\/Uploads\/Fastphoto.*,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Shengmo/shengmo.js,script-update-interval=0
 
 [MITM]
-hostname = %APPEND% shengmo2.*.aliyuncs.com
+hostname = %APPEND% shengmo2.oss-cn-shanghai.aliyuncs.com
