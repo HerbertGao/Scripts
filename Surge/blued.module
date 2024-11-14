@@ -1,6 +1,7 @@
 #!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/blued.module
 #!name= Blued闪照
 #!desc= Blued闪照转通知
+#!category=HerbertGao's Scripts
 
 [Rule]
 URL-REGEX,https://argo.blued.cn/blued/promote.*,REJECT

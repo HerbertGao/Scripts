@@ -2,6 +2,7 @@
 #!name=Mac Setting
 #!desc=Mac 代理设置
 #!system=mac
+#!category=HerbertGao's Scripts
 
 [General]
 # macOS Only

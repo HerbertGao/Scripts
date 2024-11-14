@@ -1,9 +1,10 @@
 #!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/htknow.module
 #!name= 海豚知道
 #!desc= 海豚知道小程序端修改平台标识符为抖音，方便在微信抓包在抖音购买的课程
+#!category=HerbertGao's Scripts
 
 [Script]
-htknow.douyin = type=http-request,pattern=^https:\/\/saas\.clientapi\.htknow\.com\/,requires-body=1,max-size=3145728,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.douyin.js,script-update-interval=0
+htknow.douyin = type=http-request,pattern=^https:\/\/saas\.clientapi\.htknow\.com\/,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.douyin.js,script-update-interval=0
 htknow.video = type=http-request,pattern=^https:\/\/qiniu\.htknow\.com\/,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/HtKnow/htknow.video.js,script-update-interval=0
 
 [MITM]
