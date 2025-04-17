@@ -8,6 +8,8 @@ const is_paid = /"is_paid":\s+\w+/g;
 const name = /"name":\s+".*?"/g;
 
 (async function launch() {
+    $.info("Muscle Booster 💪", "url:", url, "body: ", body)
+
     if (url.indexOf("subscription-restore") !== -1) {
         body = body.replace(is_validation_success, '"is_validation_success": true');
         $.info("Muscle Booster 💪", "body: ", body)
