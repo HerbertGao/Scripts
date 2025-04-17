@@ -8,11 +8,8 @@ const is_paid = /"is_paid":\s+\w+/g;
 const name = /"name":\s+".*?"/g;
 
 (async function launch() {
-    $.info("Muscle Booster 💪", "url:", url, "body: ", body)
-
     if (url.indexOf("subscription-restore") !== -1) {
         body = body.replace(is_validation_success, '"is_validation_success": true');
-        $.info("Muscle Booster 💪", "body: ", body)
         $.msg("Muscle Booster 💪", "永久Vip破解成功");
         $.done({
             body
@@ -20,7 +17,6 @@ const name = /"name":\s+".*?"/g;
     }
     if (url.indexOf("user") !== -1) {
         body = body.replace(is_paid, '"is_paid": true').replace(name, '"name": "HerbertGao"');
-        $.info("Muscle Booster 💪", "body: ", body)
         $.done({
             body
         })
@@ -28,7 +24,6 @@ const name = /"name":\s+".*?"/g;
 
     if (url.indexOf("check-receipt") !== -1) {
         body = body.replace(is_paid, '"is_paid": true').replace(name, '"name": "HerbertGao"');
-        $.info("Muscle Booster 💪", "body: ", body)
         $.msg("Muscle Booster 💪", "永久Vip破解成功");
         $.done({
             body
