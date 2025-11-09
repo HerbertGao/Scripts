@@ -5,8 +5,10 @@ http:
   mitm:
     - "*burn-chatfiles.bldimg.com"
     - "*burn-chatfiles.bldimg.cn"
+    - "*burnchatfiles*.bldimg.com"
+    - "*burnchatfiles*.bldimg.cn"
   script:
-    - match: ^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*\.(mp4|jpg|png).*
+    - match: ^https:\/\/(burn-chatfiles|.*burnchatfiles.*)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*\.(mp4|jpg|png).*
       name: blued.js
       type: response
       require-body: true

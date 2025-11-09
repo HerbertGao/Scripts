@@ -13,7 +13,7 @@ URL-REGEX,^https://social\.blued\.cn/users/recommend,REJECT
 URL-REGEX,^https://voice\.irisgw\.cn/users/chatroom,REJECT
 
 [Script]
-Blued闪照保存 = type=http-response,pattern=^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js,script-update-interval=0
+Blued闪照保存 = type=http-response,pattern=^https:\/\/(burn-chatfiles|.*burnchatfiles.*)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% social.blued.cn,argo.blued.cn,*.bldimg.com,*.bldimg.cn,voice.irisgw.cn
