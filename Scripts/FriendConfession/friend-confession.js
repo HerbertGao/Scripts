@@ -15,7 +15,11 @@ const $ = new Env("朋友坦白局");
 
     // 格式化对话内容
     const conversations = data.list.map(item => {
-      return `Q: ${item.nickName}\n${item.content}\nA: ${answerNickName}\n${item.answer}`;
+      let text = `Q: ${item.nickName}\n${item.content}`;
+      if (item.answer && item.answer.trim() !== '') {
+        text += `\nA: ${answerNickName}\n${item.answer}`;
+      }
+      return text;
     }).join("\n\n");
 
     // 发送通知
