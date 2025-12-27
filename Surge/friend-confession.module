@@ -4,7 +4,7 @@
 #!category=HerbertGao's Scripts
 
 [Script]
-朋友坦白局 = type=http-response,pattern=^http:\/\/t3\.haoyouxiaozhitiao\.top\/h5friend\/archive\?id=.*&mid=.*,requires-body=1,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/FriendConfession/friend-confession.js,script-update-interval=0
+朋友坦白局 = type=http-response,pattern=^http:\/\/.+\.haoyou(xiaozhitiao|qiaoqiaohua)\.top\/h5friend\/archive\?id=.*&mid=.*,requires-body=1,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/FriendConfession/friend-confession.js,script-update-interval=0
 
 [MITM]
-hostname = %APPEND% t3.haoyouxiaozhitiao.top
+hostname = %APPEND% *.haoyouxiaozhitiao.top, *.haoyouqiaoqiaohua.top
