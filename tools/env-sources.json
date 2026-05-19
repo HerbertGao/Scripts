@@ -1,0 +1,18 @@
+{
+  "_note": "Env 上游来源清单。update-env.mjs 读取此文件同步 Env 并嵌入各消费脚本;定时任务见 .github/workflows/update-env.yml。",
+  "downloads": [
+    {
+      "url": "https://raw.githubusercontent.com/chavyleung/scripts/master/Env.js",
+      "dest": "Scripts/Env.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/chavyleung/scripts/master/Env.min.js",
+      "dest": "Scripts/Env.min.js"
+    }
+  ],
+  "embed": {
+    "source": "Scripts/Env.min.js",
+    "scanDir": "Scripts",
+    "exclude": ["Scripts/Env.js", "Scripts/Env.min.js"]
+  }
+}
