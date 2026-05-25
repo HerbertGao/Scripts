@@ -1,0 +1,10 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Shadowrocket/subapp.save.module
+#!name= SubApp阅后即焚保存
+#!desc= SubApp阅后即焚转快捷指令保存
+#!category=HerbertGao's Scripts
+
+[Script]
+subapp保存 = type=http-response,pattern=^http:\/\/rongcloud-spic\.ronghub\.com\/,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SubApp/subapp.save.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% rongcloud-spic.ronghub.com
