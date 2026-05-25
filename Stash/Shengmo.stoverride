@@ -1,0 +1,21 @@
+name: 圣魔闪照
+desc: 圣魔闪照转通知
+
+http:
+  mitm:
+    - "shengmo2.oss-cn-shanghai.aliyuncs.com"
+    - "image.oss2.aiwujie.com.cn"
+  script:
+    - match: ^http:\/\/shengmo2\.oss-cn-shanghai\.aliyuncs\.com\/Uploads\/Fastphoto\/
+      name: shengmo.js
+      type: response
+      require-body: true
+    - match: ^https?:\/\/image\.oss2\.aiwujie\.com\.cn\/Uploads\/Fastphoto\/
+      name: shengmo.js
+      type: response
+      require-body: true
+
+script-providers:
+  shengmo.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Shengmo/shengmo.js
+    interval: 86400
