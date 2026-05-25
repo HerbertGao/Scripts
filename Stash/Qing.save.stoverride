@@ -1,0 +1,16 @@
+name: Qing闪照保存
+desc: Qing闪照转快捷指令保存
+
+http:
+  mitm:
+    - "cdn.qing2000.com"
+  script:
+    - match: ^https?:\/\/cdn\.qing2000\.com\/private-flash-photo\/.*
+      name: qing.save.js
+      type: response
+      require-body: true
+
+script-providers:
+  qing.save.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Qing/qing.save.js
+    interval: 86400

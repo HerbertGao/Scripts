@@ -1,0 +1,23 @@
+name: Blued闪照保存
+desc: Blued闪照转快捷指令保存
+
+http:
+  mitm:
+    - "*burn-chatfiles.bldimg.com"
+    - "*burn-chatfiles.bldimg.cn"
+    - "*burnchatfiles*.bldimg.com"
+    - "*burnchatfiles*.bldimg.cn"
+  script:
+    - match: ^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*\.(mp4|jpg|png).*
+      name: blued.save.js
+      type: response
+      require-body: true
+    - match: ^https:\/\/.*burnchatfiles.*\.bldimg\.(com|cn)\/burn_chatfiles\/(users|videos)\/.*\.(mp4|jpg|png).*
+      name: blued.save.js
+      type: response
+      require-body: true
+
+script-providers:
+  blued.save.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js
+    interval: 86400

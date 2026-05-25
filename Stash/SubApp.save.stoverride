@@ -1,0 +1,16 @@
+name: SubApp阅后即焚保存
+desc: SubApp阅后即焚转快捷指令保存
+
+http:
+  mitm:
+    - "rongcloud-spic.ronghub.com"
+  script:
+    - match: ^http:\/\/.rongcloud-spic\.ronghub\.com\/
+      name: subapp.save.js
+      type: response
+      require-body: true
+
+script-providers:
+  subapp.save.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SubApp/subapp.save.js
+    interval: 86400
