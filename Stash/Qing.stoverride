@@ -1,0 +1,16 @@
+name: Qing闪照
+desc: Qing闪照转通知
+
+http:
+  mitm:
+    - "cdn.qing2000.com"
+  script:
+    - match: ^https?:\/\/cdn\.qing2000\.com\/private-flash-photo\/.*
+      name: qing.js
+      type: response
+      require-body: true
+
+script-providers:
+  qing.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Qing/qing.js
+    interval: 86400

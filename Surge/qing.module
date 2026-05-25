@@ -1,0 +1,10 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/qing.module
+#!name= Qing闪照
+#!desc= Qing闪照转通知
+#!category=HerbertGao's Scripts
+
+[Script]
+Qing闪照① = type=http-response,pattern=^https?:\/\/cdn\.qing2000\.com\/private-flash-photo\/.*,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Qing/qing.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% cdn.qing2000.com
