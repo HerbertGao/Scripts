@@ -7,6 +7,7 @@ http:
     - "*burn-chatfiles.bldimg.cn"
     - "*burnchatfiles*.bldimg.com"
     - "*burnchatfiles*.bldimg.cn"
+    - "argo.blued.cn"
   script:
     - match: ^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*\.(mp4|jpg|png).*
       name: blued.save.js
@@ -16,8 +17,15 @@ http:
       name: blued.save.js
       type: response
       require-body: true
+    - match: ^https:\/\/argo\.blued\.cn\/users\/\d+(\?|$)
+      name: blued.profile.js
+      type: response
+      require-body: true
 
 script-providers:
   blued.save.js:
     url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js
+    interval: 86400
+  blued.profile.js:
+    url: https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.profile.js
     interval: 86400
