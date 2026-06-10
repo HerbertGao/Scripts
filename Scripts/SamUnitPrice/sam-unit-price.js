@@ -2,13 +2,16 @@
  * 山姆真实单价·众包上报 (http-response)
  *
  * 拦截山姆 App 商品列表接口 grouping/list 的响应，提取每个商品的标题与价格，
- * 上报到「真实单价比价」API 的 authed POST /contribute（Bearer = 用户手填 ApiKey）。
+ * 上报到「真实单价比价」API 的 authed POST /ingest（Bearer = 用户手填 ApiKey）。
+ *
+ * /ingest 落 raw 后秒返 202，tier2 解析与单价计算在服务端后台异步完成——
+ * 故本脚本无需客户端阻塞兜底，只需 await 一批快速的 202 即可放行响应。
  *
  * 设计：
  *  - 只读不改写山姆响应，最后 $.done({}) 透传放行（不影响 App）。
  *  - 静默运行：只输出日志、不发任何通知。
  *  - 本地按 spuId+价格(分) 去重，仅上报新出现或变价的商品。
- *  - 并发池 + 整体阻塞上限：放行响应最多等待 MAX_BLOCK，未完成的下次浏览补报。
+ *  - 并发池跑批；每次响应至多上报 MAX_PER_RUN 条（其余下次浏览补报）。
  *  - 鉴权 Key 不内置，由用户在模块参数里手填；留空则不上报。
  */
 const $ = new Env("sam-unit-price.js");
@@ -16,8 +19,7 @@ const $ = new Env("sam-unit-price.js");
 const SEEN_KEY = "sam_unit_price_seen"; // 持久化：{ [spuId]: priceCents }
 const MAX_PER_RUN = 40; // 每次响应最多上报条数（其余下次补）
 const POOL = 5; // 并发上限（对服务端限频友好）
-const REQ_TIMEOUT = 6000; // 单请求超时 ms
-const MAX_BLOCK = 5000; // 最多阻塞响应放行的时间 ms
+const REQ_TIMEOUT = 6000; // 单请求超时 ms（防个别请求卡住）
 
 (async () => {
   const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
@@ -76,7 +78,7 @@ const MAX_BLOCK = 5000; // 最多阻塞响应放行的时间 ms
   const work = async (x) => {
     try {
       const resp = await $.http.post({
-        url: apiBase + "/contribute",
+        url: apiBase + "/ingest",
         timeout: REQ_TIMEOUT,
         headers: {
           "Content-Type": "application/json",
@@ -86,7 +88,8 @@ const MAX_BLOCK = 5000; // 最多阻塞响应放行的时间 ms
       });
       const code = Number(resp && (resp.status || resp.statusCode)) || 0;
       if (code >= 200 && code < 300) {
-        seen[x.spuId] = x.cents; // 仅成功才标记已报（失败下次重试，服务端 upsert 幂等）
+        // /ingest 成功 = 202 accepted（raw 已落，解析在服务端后台异步进行）。
+        seen[x.spuId] = x.cents; // 仅 2xx 才标记已报（失败下次重试，服务端 upsert 幂等）
         ok++;
         $.debug(`✓ ${x.spuId} ¥${x.price} ${x.title}`);
       } else {
@@ -99,8 +102,8 @@ const MAX_BLOCK = 5000; // 最多阻塞响应放行的时间 ms
     }
   };
 
-  // 并发池跑批；整体最多阻塞 MAX_BLOCK，超时即放行响应，未完成的下次补报
-  await Promise.race([runPool(pending, POOL, work), $.wait(MAX_BLOCK)]);
+  // 并发池跑批；/ingest 秒返 202，整批很快完成，无需阻塞兜底
+  await runPool(pending, POOL, work);
 
   $.setjson(seen, SEEN_KEY);
   $.info(`上报完成：成功 ${ok}、失败 ${fail}、跳过(已报) ${items.length - pending.length}`);
