@@ -1,115 +1,149 @@
 /**
- * 山姆真实单价·众包上报 (http-response)
+ * 山姆真实单价·众包采集/上报（双模式，单文件）
  *
- * 拦截山姆 App 商品列表接口 grouping/list 的响应，提取每个商品的标题与价格，
- * 上报到「真实单价比价」API 的 authed POST /ingest（Bearer = 用户手填 ApiKey）。
+ * 采集（http-response）：拦截山姆 App 商品列表接口 grouping/list 的响应，
+ *   解析每个商品的标题与价格，按 spuId 去重入队到本地持久化队列后立即放行——
+ *   不联网、不阻塞 App。
+ * 上报（cron）：后台从队列取一批 POST 到「真实单价比价」API 的 authed
+ *   /ingest（Bearer = 用户手填 ApiKey），成功出队并标记已报，失败保留重试。
  *
- * /ingest 落 raw 后秒返 202，tier2 解析与单价计算在服务端后台异步完成——
- * 故本脚本无需客户端阻塞兜底，只需 await 一批快速的 202 即可放行响应。
+ * /ingest 落 raw 后秒返 202，tier2 解析与单价计算在服务端后台异步完成。
  *
  * 设计：
- *  - 只读不改写山姆响应，最后 $.done({}) 透传放行（不影响 App）。
+ *  - 采集只读不改写山姆响应，立即 $.done({}) 透传放行（不影响 App）。
  *  - 静默运行：只输出日志、不发任何通知。
- *  - 本地按 spuId+价格(分) 去重，仅上报新出现或变价的商品。
- *  - 并发池跑批；每次响应至多上报 MAX_PER_RUN 条（其余下次浏览补报）。
- *  - 鉴权 Key 不内置，由用户在模块参数里手填；留空则不上报。
+ *  - 本地按 spuId+价格(分) 去重，仅入队/上报新出现或变价的商品。
+ *  - 鉴权 Key 不内置，由用户在模块参数里手填；留空则不入队/不上报。
  */
 const $ = new Env("sam-unit-price.js");
 
-const SEEN_KEY = "sam_unit_price_seen"; // 持久化：{ [spuId]: priceCents }
-const MAX_PER_RUN = 40; // 每次响应最多上报条数（其余下次补）
-const POOL = 5; // 并发上限（对服务端限频友好）
-const REQ_TIMEOUT = 6000; // 单请求超时 ms（防个别请求卡住）
+const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: cents } 已成功上报
+const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents} } 待上报(按 spuId 去重)
+const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
+const BATCH = 30; // 每次 cron 最多上报条数
+const POOL = 5; // 并发上限
+const REQ_TIMEOUT = 8000; // 单请求超时 ms
 
-(async () => {
-  const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
-  $.logLevel = (cfg.LogLevel || "info").toLowerCase();
+const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
+$.logLevel = (cfg.LogLevel || "info").toLowerCase();
+
+if (typeof $response !== "undefined" && $response) {
+  // 采集模式(http-response):解析 + 入队 + 立即放行,不联网、不阻塞 App
+  try {
+    capture(cfg);
+  } catch (e) {
+    $.error("采集异常: " + (e && (e.stack || e.message || e)));
+  }
+  $.done({}); // 透传放行(瞬间)
+} else {
+  // 上报模式(cron):后台异步把队列 POST 到 /ingest
+  drain(cfg)
+    .catch((e) => $.error("上报异常: " + (e && (e.stack || e.message || e))))
+    .finally(() => $.done());
+}
+
+// 采集:解析 dataList → 按 spuId+价格去重(对照 seen 与现有 queue)→ 入队
+function capture(cfg) {
   const apiBase = (cfg.ApiBase || "").replace(/\/+$/, "");
   const apiKey = cfg.ApiKey || "";
-
   if (!apiBase || !apiKey) {
-    $.warn("未配置 ApiBase / ApiKey，跳过上报（在模块参数里填写后生效）");
+    $.warn("未配置 ApiBase / ApiKey,不入队(防队列堆积)");
     return;
   }
-
   const body = $response && $response.body;
   if (!body) {
-    $.warn("响应无 body，跳过");
+    $.warn("响应无 body,跳过");
     return;
   }
-
   let json;
   try {
     json = JSON.parse(body);
   } catch (e) {
-    $.warn("响应非 JSON，跳过: " + (e.message || e));
+    $.warn("响应非 JSON,跳过: " + (e.message || e));
     return;
   }
-
   const list = json && json.data && Array.isArray(json.data.dataList) ? json.data.dataList : [];
   if (!list.length) {
-    $.info("dataList 为空，跳过");
+    $.info("dataList 为空,跳过");
     return;
   }
-
-  // 提取 + 校验（缺标题/价格/spuId 的丢弃）
-  const items = [];
+  const seen = $.getjson(SEEN_KEY, {}) || {};
+  const queue = $.getjson(QUEUE_KEY, {}) || {};
+  let added = 0;
   for (const it of list) {
     const spuId = it && it.spuId != null ? String(it.spuId) : "";
     const title = it && typeof it.title === "string" ? it.title.trim() : "";
     const cents = pickPriceCents(it);
     if (!spuId || !title || cents == null) continue;
-    items.push({ spuId, title, cents, price: cents / 100 });
+    if (seen[spuId] === cents) continue; // 已成功上报且未变价
+    if (queue[spuId] && queue[spuId].cents === cents) continue; // 已在队列且未变价
+    queue[spuId] = { title, cents };
+    added++;
   }
-  $.info(`接口返回 ${list.length} 项，可用 ${items.length} 项`);
-  if (!items.length) return;
+  // 队列上限:超出按插入序丢最早
+  const keys = Object.keys(queue);
+  if (keys.length > QUEUE_MAX) for (const k of keys.slice(0, keys.length - QUEUE_MAX)) delete queue[k];
+  $.setjson(queue, QUEUE_KEY);
+  $.info(`采集:接口返回 ${list.length}、新入队 ${added}、队列共 ${Object.keys(queue).length}`);
+}
 
-  // 去重：仅上报新出现或价格变化的 spuId
-  const seen = $.getjson(SEEN_KEY, {}) || {};
-  const pending = items.filter((x) => seen[x.spuId] !== x.cents).slice(0, MAX_PER_RUN);
-  if (!pending.length) {
-    $.info("无新增/变价商品，无需上报");
+// 上报:从队列取一批 POST /ingest;2xx→出队+标记 seen;invalid-request→丢弃(坏数据);其余→保留重试
+async function drain(cfg) {
+  const apiBase = (cfg.ApiBase || "").replace(/\/+$/, "");
+  const apiKey = cfg.ApiKey || "";
+  if (!apiBase || !apiKey) {
+    $.warn("未配置 ApiBase / ApiKey,跳过上报");
     return;
   }
-  $.info(`待上报 ${pending.length} 项（本次上限 ${MAX_PER_RUN}）`);
-
-  let ok = 0;
-  let fail = 0;
-  const work = async (x) => {
+  const queue = $.getjson(QUEUE_KEY, {}) || {};
+  const seen = $.getjson(SEEN_KEY, {}) || {};
+  const ids = Object.keys(queue).slice(0, BATCH);
+  if (!ids.length) {
+    $.info("队列为空,无需上报");
+    return;
+  }
+  $.info(`上报开始:队列 ${Object.keys(queue).length}、本次处理 ${ids.length}`);
+  let ok = 0,
+    drop = 0,
+    keep = 0;
+  const work = async (spuId) => {
+    const x = queue[spuId];
     try {
       const resp = await $.http.post({
         url: apiBase + "/ingest",
         timeout: REQ_TIMEOUT,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + apiKey,
-        },
-        body: JSON.stringify({ title: x.title, price: x.price, store: "sam", storeSku: x.spuId }),
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+        body: JSON.stringify({ title: x.title, price: x.cents / 100, store: "sam", storeSku: spuId }),
       });
       const code = Number(resp && (resp.status || resp.statusCode)) || 0;
+      const err = errCode(resp && resp.body);
       if (code >= 200 && code < 300) {
-        // /ingest 成功 = 202 accepted（raw 已落，解析在服务端后台异步进行）。
-        seen[x.spuId] = x.cents; // 仅 2xx 才标记已报（失败下次重试，服务端 upsert 幂等）
+        // /ingest 对一切上报(含不可解析标题)都返 202,服务端后台解析——故 2xx 即出队、不再重试
+        seen[spuId] = x.cents;
+        delete queue[spuId];
         ok++;
-        $.debug(`✓ ${x.spuId} ¥${x.price} ${x.title}`);
+        $.debug(`✓ ${spuId} ¥${x.cents / 100} ${x.title}`);
+      } else if (err === "invalid-request") {
+        // 坏数据(理论上不该来自山姆):移出队列,避免反复重试
+        seen[spuId] = x.cents;
+        delete queue[spuId];
+        drop++;
+        $.info(`⊘ ${spuId} 丢弃(invalid-request):${x.title}`);
       } else {
-        fail++;
-        $.warn(`✗ ${x.spuId} HTTP ${code} ${truncate(resp && resp.body, 160)}`);
+        // 401/403/429/persistence-error/网络:保留下次 cron 重试
+        keep++;
+        $.warn(`✗ ${spuId} HTTP ${code} ${err || ""} 保留重试`);
       }
     } catch (e) {
-      fail++;
-      $.warn(`✗ ${x.spuId} 请求异常: ${e && (e.message || e)}`);
+      keep++;
+      $.warn(`✗ ${spuId} 请求异常,保留重试: ${e && (e.message || e)}`);
     }
   };
-
-  // 并发池跑批；/ingest 秒返 202，整批很快完成，无需阻塞兜底
-  await runPool(pending, POOL, work);
-
+  await runPool(ids, POOL, work);
+  $.setjson(queue, QUEUE_KEY);
   $.setjson(seen, SEEN_KEY);
-  $.info(`上报完成：成功 ${ok}、失败 ${fail}、跳过(已报) ${items.length - pending.length}`);
-})()
-  .catch((e) => $.error("脚本异常: " + (e && (e.stack || e.message || e))))
-  .finally(() => $.done({})); // 透传放行，不改写山姆响应
+  $.info(`上报完成:成功 ${ok}、丢弃 ${drop}、保留 ${keep}、队列剩 ${Object.keys(queue).length}`);
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────
 /** 解析 Surge $argument（`K="v"&K2="v2"` 形态）为对象。 */
@@ -142,6 +176,16 @@ function pickPriceCents(it) {
 function truncate(s, n) {
   s = String(s == null ? "" : s);
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+/** 从 /ingest 响应体解析 error code(无则空串)。 */
+function errCode(body) {
+  try {
+    const j = JSON.parse(body);
+    return j && j.error ? String(j.error) : "";
+  } catch {
+    return "";
+  }
 }
 
 /** 固定并发池跑 items（每个交给 worker），全部完成后 resolve。 */

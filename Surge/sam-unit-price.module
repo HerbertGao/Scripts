@@ -1,12 +1,13 @@
 #!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/sam-unit-price.module
 #!name= 山姆真实单价·众包上报
-#!desc= 静默拦截山姆 App 商品列表接口，提取商品标题与价格上报到「真实单价比价」API（异步 /ingest 端点，秒返不卡 App），沉淀山姆饮料真实单价榜。需手填你自己的 API Key（不内置、不分发）。只读不改写山姆数据，仅上报你正在浏览的商品、不做主动爬取。
+#!desc= 静默拦截山姆 App 商品列表接口，提取商品标题与价格即时入队（不联网、不阻塞 App），由 cron 后台逐批上报到「真实单价比价」API（异步 /ingest 端点），沉淀山姆饮料真实单价榜。需手填你自己的 API Key（不内置、不分发）。只读不改写山姆数据，仅上报你正在浏览的商品、不做主动爬取。
 #!category=HerbertGao's Scripts
 #!arguments=ApiBase:"https://unit-price-api.herbertgao.workers.dev",ApiKey:"",LogLevel:"info"
 #!arguments-desc=ApiBase: 比价 API 基址（默认生产环境，一般无需改）\n\nApiKey: 你的 API Key（必填）。向「真实单价比价」服务申请；脚本不内置，每人填自己的；留空则不上报。\n\nLogLevel: 日志等级\n    ├ debug: 🅱️ 调试（打印每条上报）\n    ├ info: ℹ️ 信息（默认）\n    ├ warn: ⚠️ 警告\n    └ error: ❌ 仅错误
 
 [Script]
-山姆真实单价上报 = type=http-response,pattern=^https?:\/\/api-sams\.walmartmobile\.cn\/api\/v1\/sams\/goods-portal\/grouping\/list,requires-body=1,max-size=0,binary-body-mode=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SamUnitPrice/sam-unit-price.js,script-update-interval=0,argument=ApiBase="{{{ApiBase}}}"&ApiKey="{{{ApiKey}}}"&LogLevel="{{{LogLevel}}}"
+山姆单价采集 = type=http-response,pattern=^https?:\/\/api-sams\.walmartmobile\.cn\/api\/v1\/sams\/goods-portal\/grouping\/list,requires-body=1,max-size=0,binary-body-mode=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SamUnitPrice/sam-unit-price.js,script-update-interval=0,argument=ApiBase="{{{ApiBase}}}"&ApiKey="{{{ApiKey}}}"&LogLevel="{{{LogLevel}}}"
+山姆单价上报 = type=cron,cronexp=* * * * *,wake-system=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/SamUnitPrice/sam-unit-price.js,script-update-interval=0,argument=ApiBase="{{{ApiBase}}}"&ApiKey="{{{ApiKey}}}"&LogLevel="{{{LogLevel}}}"
 
 [MITM]
 hostname = %APPEND% api-sams.walmartmobile.cn
