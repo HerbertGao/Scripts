@@ -17,15 +17,20 @@
  *  - Reset=true：下一次 cron 清空本地 seen+queue 并暂停采集/上报（一次性，
  *    用于服务端数据整体重录后让本机重新采集）；清空后改回 false 恢复。
  *  - cron 每 5 分钟一次；队列为空时静默（不打印「无需上报」日志）。
+ *  - 上报有时间预算（BUDGET_MS，< 模块 cron timeout=30s）：预算内尽量多发、
+ *    到点先持久化进度再收工，余下留下次——避免被 Surge 脚本超时硬杀致队列卡死。
  */
 const $ = new Env("sam-unit-price.js");
 
 const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: cents } 已成功上报
 const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents} } 待上报(按 spuId 去重)
 const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
-const BATCH = 30; // 每次 cron 最多上报条数
+const BATCH = 50; // 每次 cron 候选上报条数上限(实际受时间预算 BUDGET_MS 截断)
 const POOL = 5; // 并发上限
-const REQ_TIMEOUT = 8000; // 单请求超时 ms
+const REQ_TIMEOUT = 6000; // 单请求超时 ms(须 < BUDGET_MS,防单个挂死吃光预算)
+// 时间预算:在 Surge 脚本被杀(模块 cron timeout=30s)前留余量停手并持久化进度。
+// 超时被杀会跳过末尾 setjson → 已成功的也不出队、队列卡死;故主动在预算内收工。
+const BUDGET_MS = 25000;
 
 const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
 $.logLevel = (cfg.LogLevel || "info").toLowerCase();
@@ -113,7 +118,8 @@ async function drain(cfg) {
     $.debug("队列为空,跳过"); // 静默:default(info) 级不打印,仅 debug 可见
     return;
   }
-  $.info(`上报开始:队列 ${Object.keys(queue).length}、本次处理 ${ids.length}`);
+  const deadline = Date.now() + BUDGET_MS; // 预算耗尽即停手,余下留下次 cron
+  $.info(`上报开始:队列 ${Object.keys(queue).length}、本次处理 ≤${ids.length}`);
   let ok = 0,
     drop = 0,
     keep = 0;
@@ -150,10 +156,12 @@ async function drain(cfg) {
       $.warn(`✗ ${spuId} 请求异常,保留重试: ${e && (e.message || e)}`);
     }
   };
-  await runPool(ids, POOL, work);
+  await runPool(ids, POOL, work, deadline);
   $.setjson(queue, QUEUE_KEY);
   $.setjson(seen, SEEN_KEY);
-  $.info(`上报完成:成功 ${ok}、丢弃 ${drop}、保留 ${keep}、队列剩 ${Object.keys(queue).length}`);
+  const left = Object.keys(queue).length;
+  const stopped = Date.now() >= deadline ? "(达时间预算,余下下次)" : "";
+  $.info(`上报完成:成功 ${ok}、丢弃 ${drop}、保留 ${keep}、队列剩 ${left}${stopped}`);
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -204,11 +212,16 @@ function errCode(body) {
   }
 }
 
-/** 固定并发池跑 items（每个交给 worker），全部完成后 resolve。 */
-async function runPool(items, size, worker) {
+/**
+ * 固定并发池跑 items（每个交给 worker），全部完成后 resolve。
+ * 传入 deadline(epoch ms) 时，预算耗尽即停止派发新任务——未派发的 item 不被处理、
+ * 留在队列等下次 cron（避免 Surge 脚本超时硬杀导致进度未持久化）。
+ */
+async function runPool(items, size, worker, deadline) {
   let i = 0;
   const runners = Array.from({ length: Math.min(size, items.length) }, async () => {
     while (i < items.length) {
+      if (deadline && Date.now() >= deadline) return; // 时间预算耗尽,收工
       const idx = i++;
       await worker(items[idx]);
     }
