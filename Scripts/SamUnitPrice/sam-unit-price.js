@@ -14,6 +14,9 @@
  *  - 静默运行：只输出日志、不发任何通知。
  *  - 本地按 spuId+价格(分) 去重，仅入队/上报新出现或变价的商品。
  *  - 鉴权 Key 不内置，由用户在模块参数里手填；留空则不入队/不上报。
+ *  - Reset=true：下一次 cron 清空本地 seen+queue 并暂停采集/上报（一次性，
+ *    用于服务端数据整体重录后让本机重新采集）；清空后改回 false 恢复。
+ *  - cron 每 5 分钟一次；队列为空时静默（不打印「无需上报」日志）。
  */
 const $ = new Env("sam-unit-price.js");
 
@@ -30,11 +33,19 @@ $.logLevel = (cfg.LogLevel || "info").toLowerCase();
 if (typeof $response !== "undefined" && $response) {
   // 采集模式(http-response):解析 + 入队 + 立即放行,不联网、不阻塞 App
   try {
-    capture(cfg);
+    if (isTruthy(cfg.Reset)) $.debug("Reset 开启,暂停采集");
+    else capture(cfg);
   } catch (e) {
     $.error("采集异常: " + (e && (e.stack || e.message || e)));
   }
   $.done({}); // 透传放行(瞬间)
+} else if (isTruthy(cfg.Reset)) {
+  // 重置模式(cron):清空本地 seen + queue,暂停采集与上报。
+  // 用于服务端数据整体重录后,让本机忘掉「已上报」记录、从零重新采集。
+  $.setjson({}, SEEN_KEY);
+  $.setjson({}, QUEUE_KEY);
+  $.info("🧹 已重置:本地 seen + queue 已清空。请把模块参数 Reset 改回 false 以恢复采集与上报。");
+  $.done();
 } else {
   // 上报模式(cron):后台异步把队列 POST 到 /ingest
   drain(cfg)
@@ -99,7 +110,7 @@ async function drain(cfg) {
   const seen = $.getjson(SEEN_KEY, {}) || {};
   const ids = Object.keys(queue).slice(0, BATCH);
   if (!ids.length) {
-    $.info("队列为空,无需上报");
+    $.debug("队列为空,跳过"); // 静默:default(info) 级不打印,仅 debug 可见
     return;
   }
   $.info(`上报开始:队列 ${Object.keys(queue).length}、本次处理 ${ids.length}`);
@@ -163,6 +174,11 @@ function parseArgs(s) {
       o[k] = v;
     });
   return o;
+}
+
+/** 宽松真值判断（Surge 参数为字符串）：true/1/yes/on/是 视为真，其余（含空、false）为假。 */
+function isTruthy(v) {
+  return /^(true|1|yes|on|是)$/i.test(String(v == null ? "" : v).trim());
 }
 
 /** 价格优先取 priceInfo[0].price（分，字符串）；兜底 it.price。返回整数分或 null。 */
