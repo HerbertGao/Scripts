@@ -4,10 +4,11 @@
  * 采集（http-response）：拦截山姆 App 商品列表接口 grouping/list 的响应，
  *   解析每个商品的标题与价格，按 spuId 去重入队到本地持久化队列后立即放行——
  *   不联网、不阻塞 App。
- * 上报（cron）：后台从队列取一批 POST 到「真实单价比价」API 的 authed
- *   /ingest（Bearer = 用户手填 ApiKey），成功出队并标记已报，失败保留重试。
+ * 上报（cron）：后台把队列分块（每块 ≤CHUNK 条）POST 到「真实单价比价」API 的
+ *   authed /ingest/batch（Bearer = 用户手填 ApiKey）——一个 TLS 握手落一批，
+ *   据响应 failed[].index 选择性出队（落地的删、失败的留待重发）。
  *
- * /ingest 落 raw 后秒返 202，tier2 解析与单价计算在服务端后台异步完成。
+ * /ingest/batch 逐条落 raw 后秒返 202，tier2 解析与单价计算在服务端后台异步完成。
  *
  * 设计：
  *  - 采集只读不改写山姆响应，立即 $.done({}) 透传放行（不影响 App）。
@@ -25,9 +26,8 @@ const $ = new Env("sam-unit-price.js");
 const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: cents } 已成功上报
 const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents} } 待上报(按 spuId 去重)
 const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
-const BATCH = 50; // 每次 cron 候选上报条数上限(实际受时间预算 BUDGET_MS 截断)
-const POOL = 5; // 并发上限
-const REQ_TIMEOUT = 4000; // 单请求超时 ms(挂死请求快速释放并发槽,让更多条在被杀前完成)
+const CHUNK = 40; // 每次 POST /ingest/batch 的条数上限(= 服务端 MAX_BATCH,一个 TLS 握手落一批)
+const REQ_TIMEOUT = 8000; // 单批请求超时 ms(一批 ≤CHUNK 条服务端同步落 raw 后才返 202,给足余量)
 // 时间预算:Surge 脚本超时由全局 [General] script-timeout 控制(默认 5s,模块行
 // timeout= 对 cron 不生效)。本预算在脚本被杀前主动停手;但真正的卡死防护是「增量
 // 持久化」(每出队一条即写回),即使被硬杀已完成的也不丢、跨多 tick 必然排空。
@@ -105,7 +105,7 @@ function capture(cfg) {
   $.info(`采集:接口返回 ${list.length}、新入队 ${added}、队列共 ${Object.keys(queue).length}`);
 }
 
-// 上报:从队列取一批 POST /ingest;2xx→出队+标记 seen;invalid-request→丢弃(坏数据);其余→保留重试
+// 上报:把队列分块 POST /ingest/batch;2xx→据 failed[].index 出队落地条+标记 seen、失败条留;整批非 2xx→整块保留重试
 async function drain(cfg) {
   const apiBase = (cfg.ApiBase || "").replace(/\/+$/, "");
   const apiKey = cfg.ApiKey || "";
@@ -115,62 +115,74 @@ async function drain(cfg) {
   }
   const queue = $.getjson(QUEUE_KEY, {}) || {};
   const seen = $.getjson(SEEN_KEY, {}) || {};
-  const ids = Object.keys(queue).slice(0, BATCH);
-  if (!ids.length) {
+  const allIds = Object.keys(queue);
+  if (!allIds.length) {
     $.debug("队列为空,跳过"); // 静默:default(info) 级不打印,仅 debug 可见
     return;
   }
   const deadline = Date.now() + BUDGET_MS; // 预算耗尽即停手,余下留下次 cron
-  $.info(`上报开始:队列 ${Object.keys(queue).length}、本次处理 ≤${ids.length}`);
+  $.info(`上报开始:队列 ${allIds.length}(批量,每批 ≤${CHUNK})`);
   let ok = 0,
-    drop = 0,
-    keep = 0;
-  // 增量持久化:每出队一条立即写回。即使 Surge 脚本超时被硬杀(末尾 setjson 不
-  // 执行),已完成的也已落盘、不会重发/卡死 → 跨多 tick 必然排空,不依赖超时配置。
+    keep = 0,
+    batches = 0;
+  // 增量持久化:每发完一批立即写回。即使 Surge 脚本超时被硬杀(末尾 setjson 不
+  // 执行),已落地的也已落盘、不会重发/卡死 → 跨多 tick 必然排空,不依赖超时配置。
   const persist = () => {
     $.setjson(queue, QUEUE_KEY);
     $.setjson(seen, SEEN_KEY);
   };
-  const work = async (spuId) => {
-    const x = queue[spuId];
+  // 分块:每块 ≤CHUNK 条,一次 POST /ingest/batch(一个 TLS 握手落一批)。
+  for (let off = 0; off < allIds.length; off += CHUNK) {
+    if (Date.now() >= deadline) break; // 预算耗尽,余下留下次 cron
+    const chunkIds = allIds.slice(off, off + CHUNK).filter((id) => queue[id]);
+    if (!chunkIds.length) continue;
+    const items = chunkIds.map((spuId) => ({
+      title: queue[spuId].title,
+      price: queue[spuId].cents / 100,
+      store: "sam",
+      storeSku: spuId,
+    }));
     try {
       const resp = await $.http.post({
-        url: apiBase + "/ingest",
+        url: apiBase + "/ingest/batch",
         timeout: REQ_TIMEOUT,
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-        body: JSON.stringify({ title: x.title, price: x.cents / 100, store: "sam", storeSku: spuId }),
+        body: JSON.stringify({ items }),
       });
       const code = Number(resp && (resp.status || resp.statusCode)) || 0;
-      const err = errCode(resp && resp.body);
+      batches++;
       if (code >= 200 && code < 300) {
-        // /ingest 对一切上报(含不可解析标题)都返 202,服务端后台解析——故 2xx 即出队、不再重试
-        seen[spuId] = x.cents;
-        delete queue[spuId];
-        ok++;
-        persist(); // 立即落盘,防硬杀丢进度
-        $.debug(`✓ ${spuId} ¥${x.cents / 100} ${x.title}`);
-      } else if (err === "invalid-request") {
-        // 坏数据(理论上不该来自山姆):移出队列,避免反复重试
-        seen[spuId] = x.cents;
-        delete queue[spuId];
-        drop++;
-        persist(); // 立即落盘
-        $.info(`⊘ ${spuId} 丢弃(invalid-request):${x.title}`);
+        // 202 { accepted, failed: [{index, store, storeSku}] }。failed 列出的
+        // index(在本批 items 数组的下标)未落地→留;其余下标已落地→出队+标记 seen。
+        const body = $.toObj(resp && resp.body, {}) || {};
+        const failedIdx = new Set((Array.isArray(body.failed) ? body.failed : []).map((f) => f && f.index));
+        chunkIds.forEach((spuId, i) => {
+          if (failedIdx.has(i)) {
+            keep++; // 该条服务端 upsertRaw 失败,保留下次重发
+          } else {
+            seen[spuId] = queue[spuId].cents;
+            delete queue[spuId];
+            ok++;
+          }
+        });
+        persist(); // 每批落盘,防硬杀丢进度
+        $.debug(`✓ 批 ${chunkIds.length} 条:落 ${chunkIds.length - failedIdx.size}、失败 ${failedIdx.size}`);
       } else {
-        // 401/403/429/persistence-error/网络:保留下次 cron 重试
-        keep++;
-        $.warn(`✗ ${spuId} HTTP ${code} ${err || ""} 保留重试`);
+        // 整批非 2xx:400(信封/某条非法,理论不该来自插件——只入合法条目)、
+        // 401/403/429/500 治理或持久化错误。整批保留下次重试,不误丢。
+        const err = errCode(resp && resp.body);
+        keep += chunkIds.length;
+        $.warn(`✗ 批 ${chunkIds.length} 条 HTTP ${code} ${err || ""} 保留重试`);
       }
     } catch (e) {
-      keep++;
-      $.warn(`✗ ${spuId} 请求异常,保留重试: ${e && (e.message || e)}`);
+      keep += chunkIds.length;
+      $.warn(`✗ 批 ${chunkIds.length} 条 请求异常,保留重试: ${e && (e.message || e)}`);
     }
-  };
-  await runPool(ids, POOL, work, deadline);
-  persist(); // 最终 flush(已增量持久化,此处兜底)
+  }
+  persist(); // 最终 flush(已逐批持久化,此处兜底)
   const left = Object.keys(queue).length;
   const stopped = Date.now() >= deadline ? "(达时间预算,余下下次)" : "";
-  $.info(`上报完成:成功 ${ok}、丢弃 ${drop}、保留 ${keep}、队列剩 ${left}${stopped}`);
+  $.info(`上报完成:落地 ${ok}、保留 ${keep}、批次 ${batches}、队列剩 ${left}${stopped}`);
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -219,23 +231,6 @@ function errCode(body) {
   } catch {
     return "";
   }
-}
-
-/**
- * 固定并发池跑 items（每个交给 worker），全部完成后 resolve。
- * 传入 deadline(epoch ms) 时，预算耗尽即停止派发新任务——未派发的 item 不被处理、
- * 留在队列等下次 cron（避免 Surge 脚本超时硬杀导致进度未持久化）。
- */
-async function runPool(items, size, worker, deadline) {
-  let i = 0;
-  const runners = Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (i < items.length) {
-      if (deadline && Date.now() >= deadline) return; // 时间预算耗尽,收工
-      const idx = i++;
-      await worker(items[idx]);
-    }
-  });
-  await Promise.all(runners);
 }
 
 // ── Env（NobyDa/chavy 跨平台垫片，内联以自包含；与本仓其它脚本一致）──────────
