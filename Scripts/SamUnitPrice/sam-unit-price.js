@@ -27,9 +27,11 @@ const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents}
 const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
 const BATCH = 50; // 每次 cron 候选上报条数上限(实际受时间预算 BUDGET_MS 截断)
 const POOL = 5; // 并发上限
-const REQ_TIMEOUT = 6000; // 单请求超时 ms(须 < BUDGET_MS,防单个挂死吃光预算)
-// 时间预算:在 Surge 脚本被杀(模块 cron timeout=30s)前留余量停手并持久化进度。
-// 超时被杀会跳过末尾 setjson → 已成功的也不出队、队列卡死;故主动在预算内收工。
+const REQ_TIMEOUT = 4000; // 单请求超时 ms(挂死请求快速释放并发槽,让更多条在被杀前完成)
+// 时间预算:Surge 脚本超时由全局 [General] script-timeout 控制(默认 5s,模块行
+// timeout= 对 cron 不生效)。本预算在脚本被杀前主动停手;但真正的卡死防护是「增量
+// 持久化」(每出队一条即写回),即使被硬杀已完成的也不丢、跨多 tick 必然排空。
+// 若用户把 [General] script-timeout 调大(如 30),本预算也用得上更长墙钟。
 const BUDGET_MS = 25000;
 
 const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
@@ -123,6 +125,12 @@ async function drain(cfg) {
   let ok = 0,
     drop = 0,
     keep = 0;
+  // 增量持久化:每出队一条立即写回。即使 Surge 脚本超时被硬杀(末尾 setjson 不
+  // 执行),已完成的也已落盘、不会重发/卡死 → 跨多 tick 必然排空,不依赖超时配置。
+  const persist = () => {
+    $.setjson(queue, QUEUE_KEY);
+    $.setjson(seen, SEEN_KEY);
+  };
   const work = async (spuId) => {
     const x = queue[spuId];
     try {
@@ -139,12 +147,14 @@ async function drain(cfg) {
         seen[spuId] = x.cents;
         delete queue[spuId];
         ok++;
+        persist(); // 立即落盘,防硬杀丢进度
         $.debug(`✓ ${spuId} ¥${x.cents / 100} ${x.title}`);
       } else if (err === "invalid-request") {
         // 坏数据(理论上不该来自山姆):移出队列,避免反复重试
         seen[spuId] = x.cents;
         delete queue[spuId];
         drop++;
+        persist(); // 立即落盘
         $.info(`⊘ ${spuId} 丢弃(invalid-request):${x.title}`);
       } else {
         // 401/403/429/persistence-error/网络:保留下次 cron 重试
@@ -157,8 +167,7 @@ async function drain(cfg) {
     }
   };
   await runPool(ids, POOL, work, deadline);
-  $.setjson(queue, QUEUE_KEY);
-  $.setjson(seen, SEEN_KEY);
+  persist(); // 最终 flush(已增量持久化,此处兜底)
   const left = Object.keys(queue).length;
   const stopped = Date.now() >= deadline ? "(达时间预算,余下下次)" : "";
   $.info(`上报完成:成功 ${ok}、丢弃 ${drop}、保留 ${keep}、队列剩 ${left}${stopped}`);
