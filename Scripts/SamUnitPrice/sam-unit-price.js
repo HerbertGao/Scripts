@@ -21,8 +21,9 @@
  *  - Reset=true：下一次 cron 清空本地 seen+queue 并暂停采集/上报（一次性，
  *    用于服务端数据整体重录后让本机重新采集）；清空后改回 false 恢复。
  *  - cron 每 5 分钟一次；队列为空时静默（不打印「无需上报」日志）。
- *  - 上报有时间预算（BUDGET_MS，< 模块 cron timeout=30s）：预算内尽量多发、
- *    到点先持久化进度再收工，余下留下次——避免被 Surge 脚本超时硬杀致队列卡死。
+ *  - 上报有时间预算（BUDGET_MS）：预算内尽量多发、到点先持久化进度再收工，
+ *    余下留下次。预算由硬杀时限反推并【预留一次 REQ_TIMEOUT】——预算检查在
+ *    每批开始前，不预留的话最后一批必然跑过头被硬杀。
  */
 const $ = new Env("sam-unit-price.js");
 
@@ -33,13 +34,20 @@ const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: [cents, ts] } �
 const REFRESH_MS = 14 * 24 * 60 * 60 * 1000;
 const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents} } 待上报(按 spuId 去重)
 const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
-const CHUNK = 40; // 每次 POST /ingest/batch 的条数上限(= 服务端 MAX_BATCH,一个 TLS 握手落一批)
-const REQ_TIMEOUT = 8000; // 单批请求超时 ms(一批 ≤CHUNK 条服务端同步落 raw 后才返 202,给足余量)
-// 时间预算:Surge 脚本超时由全局 [General] script-timeout 控制(默认 5s,模块行
-// timeout= 对 cron 不生效)。本预算在脚本被杀前主动停手;但真正的卡死防护是「增量
-// 持久化」(每出队一条即写回),即使被硬杀已完成的也不丢、跨多 tick 必然排空。
-// 若用户把 [General] script-timeout 调大(如 30),本预算也用得上更长墙钟。
-const BUDGET_MS = 25000;
+// 每次 POST /ingest/batch 的条数上限(服务端 MAX_BATCH=40 是硬上限,这里取更小)。
+// 服务端在返回 202 之前会【串行】逐条 upsertRaw,故整批耗时随条数线性增长;
+// 且斜率取决于走哪个域:直连 workers.dev 时边际成本≈0(Worker 与 D1 同区),
+// 经备案域回源时实测约 0.22s/条(Aliyun POP 回源进的 CF 边缘离 D1 远)。
+// 按后者算:40 条 ≈ 1.8 + 40×0.22 ≈ 10.7s,必然超时;15 条 ≈ 5.1s,留足余量。
+const CHUNK = 15;
+const REQ_TIMEOUT = 12000; // 单批请求超时 ms(15 条实测 ~5s,给约 2.3 倍余量吃慢链路)
+// Surge 会在 script-timeout 到点硬杀脚本(实测 30s)。预算检查发生在【一批开始前】,
+// 所以最坏情况是「预算差一点耗尽时又起了一批」,总耗时 ≈ BUDGET_MS + REQ_TIMEOUT。
+// 二者之和必须留在硬超时以内,否则每个 tick 的最后一批必被硬杀——故由硬超时
+// 反推预算,而不是写两个各自独立、会悄悄漂开的常量。
+// 硬杀本身不丢数据(每批落盘即持久化,未确认的留在队列),但白等一次请求。
+const HARD_KILL_MS = 30000;
+const BUDGET_MS = HARD_KILL_MS - REQ_TIMEOUT - 1000;
 
 const cfg = parseArgs(typeof $argument === "string" ? $argument : "");
 $.logLevel = (cfg.LogLevel || "info").toLowerCase();
