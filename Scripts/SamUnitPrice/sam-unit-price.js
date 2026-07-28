@@ -13,7 +13,10 @@
  * 设计：
  *  - 采集只读不改写山姆响应，立即 $.done({}) 透传放行（不影响 App）。
  *  - 静默运行：只输出日志、不发任何通知。
- *  - 本地按 spuId+价格(分) 去重，仅入队/上报新出现或变价的商品。
+ *  - 本地按 spuId+价格(分) 去重：新出现或变价的立即入队；价格没变的也每
+ *    REFRESH_MS 重报一次。价格没变不等于没有新观测——只按变价上报的话，一件
+ *    长期不变价的商品会永远停在首次上报那天的采集时间戳上，到期被端上标成
+ *    「可能已变动」，且再怎么逛也白不回来。
  *  - 鉴权 Key 不内置，由用户在模块参数里手填；留空则不入队/不上报。
  *  - Reset=true：下一次 cron 清空本地 seen+queue 并暂停采集/上报（一次性，
  *    用于服务端数据整体重录后让本机重新采集）；清空后改回 false 恢复。
@@ -23,7 +26,11 @@
  */
 const $ = new Env("sam-unit-price.js");
 
-const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: cents } 已成功上报
+const SEEN_KEY = "sam_unit_price_seen"; // 持久化 { [spuId]: [cents, ts] } 已成功上报(旧版为裸 cents,兼容读)
+// 未变价商品的重报周期。必须显著小于端上的「可能已变动」阈值(30 天),否则
+// 商品会在两次重报之间就被标灰。每次重报服务端都会跑一遍解析(可能含 tier2
+// LLM),故不宜过短——14 天既留足 16 天余量,又把成本压到 7 天方案的一半。
+const REFRESH_MS = 14 * 24 * 60 * 60 * 1000;
 const QUEUE_KEY = "sam_unit_price_queue"; // 持久化 { [spuId]: {title, cents} } 待上报(按 spuId 去重)
 const QUEUE_MAX = 800; // 队列上限,防未配置时无限增长
 const CHUNK = 40; // 每次 POST /ingest/batch 的条数上限(= 服务端 MAX_BATCH,一个 TLS 握手落一批)
@@ -87,13 +94,15 @@ function capture(cfg) {
   }
   const seen = $.getjson(SEEN_KEY, {}) || {};
   const queue = $.getjson(QUEUE_KEY, {}) || {};
+  const now = Date.now();
   let added = 0;
   for (const it of list) {
     const spuId = it && it.spuId != null ? String(it.spuId) : "";
     const title = it && typeof it.title === "string" ? it.title.trim() : "";
     const cents = pickPriceCents(it);
     if (!spuId || !title || cents == null) continue;
-    if (seen[spuId] === cents) continue; // 已成功上报且未变价
+    const prev = seenEntry(seen[spuId]);
+    if (prev && prev.cents === cents && now - prev.ts < REFRESH_MS) continue; // 未变价且未到重报期
     if (queue[spuId] && queue[spuId].cents === cents) continue; // 已在队列且未变价
     queue[spuId] = { title, cents };
     added++;
@@ -160,7 +169,7 @@ async function drain(cfg) {
           if (failedIdx.has(i)) {
             keep++; // 该条服务端 upsertRaw 失败,保留下次重发
           } else {
-            seen[spuId] = queue[spuId].cents;
+            seen[spuId] = [queue[spuId].cents, Date.now()];
             delete queue[spuId];
             ok++;
           }
@@ -203,6 +212,17 @@ function parseArgs(s) {
       o[k] = v;
     });
   return o;
+}
+
+/**
+ * 读 seen 条目，兼容两种形态：新版 [cents, ts]，与旧版裸 cents（数字）。
+ * 旧版条目视作 ts=0，即「早已过重报期」——升级后首次逛到即重报一次，
+ * 正好把存量的陈旧采集时间戳刷新掉。无法识别的形态返回 null（当作没见过）。
+ */
+function seenEntry(v) {
+  if (Array.isArray(v)) return { cents: Number(v[0]), ts: Number(v[1]) || 0 };
+  if (typeof v === "number") return { cents: v, ts: 0 };
+  return null;
 }
 
 /** 宽松真值判断（Surge 参数为字符串）：true/1/yes/on/是 视为真，其余（含空、false）为假。 */
