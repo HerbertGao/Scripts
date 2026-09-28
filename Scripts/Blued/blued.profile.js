@@ -1,8 +1,8 @@
 const url = $request.url;
 const $ = new Env("blued.profile.js");
 
-// argo.blued.cn/users/<uid> 资料接口（排除 /apnsbadge、/paid/goods 等子路径）
-const PROFILE_RE = /^https?:\/\/argo\.blued\.cn\/users\/(\d+)(?:\?|$)/i;
+// Blued /users/<uid> 资料接口（排除 /apnsbadge、/paid/goods 等子路径）
+const PROFILE_RE = /^https?:\/\/(?:argo\.blued\.cn|social\.irisgw\.cn)\/users\/(\d+)(?:\?|$)/i;
 
 (async function launch() {
   const m = url.match(PROFILE_RE);

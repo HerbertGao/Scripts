@@ -8,6 +8,16 @@ http:
     - "*burnchatfiles*.bldimg.com"
     - "*burnchatfiles*.bldimg.cn"
     - "argo.blued.cn"
+    - "social.blued.cn"
+    - "social.irisgw.cn"
+    - "moments.irisgw.cn"
+    - "voice.irisgw.cn"
+  url-rewrite:
+    - ^https://(?:argo\.blued\.cn|moments\.irisgw\.cn)/blued/(?:promote.*|adms/.*|splash.*|launch/adms(?:\?.*)?|promotion/banners(?:\?.*)?|floats(?:\?.*)?|api/ad/distribution(?:\?.*)?)$ - reject
+    - ^https://(?:social\.blued\.cn|social\.irisgw\.cn)/users/.*/joy(?:\?.*)?$ - reject
+    - ^https://(?:social\.blued\.cn|social\.irisgw\.cn)/users/(?:recommend|selection)(?:\?.*)?$ - reject
+    - ^https://voice\.irisgw\.cn/users/chatroom.* - reject
+    - ^https://social\.irisgw\.cn/voice-chat/api/.* - reject
   script:
     - match: ^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*\.(mp4|jpg|png).*
       name: blued.js
@@ -17,7 +27,7 @@ http:
       name: blued.js
       type: response
       require-body: true
-    - match: ^https:\/\/argo\.blued\.cn\/users\/\d+(\?|$)
+    - match: ^https:\/\/(?:argo\.blued\.cn|social\.irisgw\.cn)\/users\/\d+(\?|$)
       name: blued.profile.js
       type: response
       require-body: true

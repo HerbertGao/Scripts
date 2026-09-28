@@ -4,18 +4,16 @@
 #!category=HerbertGao's Scripts
 
 [Rule]
-URL-REGEX,^https://argo\.blued\.cn/blued/promote.*,REJECT
-URL-REGEX,^https://argo\.blued\.cn/blued/adms/.*,REJECT
-URL-REGEX,^https://argo\.blued\.cn/blued/splash.*,REJECT
-URL-REGEX,^https://argo\.blued\.cn/blued/launch/adms,REJECT
-URL-REGEX,^https://social\.blued\.cn/users/.*/joy,REJECT
-URL-REGEX,^https://social\.blued\.cn/users/recommend,REJECT
-URL-REGEX,^https://voice\.irisgw\.cn/users/chatroom,REJECT
+URL-REGEX,^https://(?:argo\.blued\.cn|moments\.irisgw\.cn)/blued/(?:promote.*|adms/.*|splash.*|launch/adms(?:\?.*)?|promotion/banners(?:\?.*)?|floats(?:\?.*)?|api/ad/distribution(?:\?.*)?)$,REJECT
+URL-REGEX,^https://(?:social\.blued\.cn|social\.irisgw\.cn)/users/.*/joy(?:\?.*)?$,REJECT
+URL-REGEX,^https://(?:social\.blued\.cn|social\.irisgw\.cn)/users/(?:recommend|selection)(?:\?.*)?$,REJECT
+URL-REGEX,^https://voice\.irisgw\.cn/users/chatroom.*,REJECT
+URL-REGEX,^https://social\.irisgw\.cn/voice-chat/api/.*,REJECT
 
 [Script]
 Blued闪照保存① = type=http-response,pattern=^https:\/\/(burn-chatfiles)\.bldimg\.(com|cn)\/.*\/(ingfiles|burn_chatfiles\/(videos|users))\/.*,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js,script-update-interval=0
 Blued闪照保存② = type=http-response,pattern=^https:\/\/.*burnchatfiles.*\.bldimg\.(com|cn)\/burn_chatfiles\/(users|videos)\/.*,requires-body=0,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.save.js,script-update-interval=0
-Blued资料卡片 = type=http-response,pattern=^https:\/\/argo\.blued\.cn\/users\/\d+(\?|$),requires-body=1,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.profile.js,script-update-interval=0
+Blued资料卡片 = type=http-response,pattern=^https:\/\/(?:argo\.blued\.cn|social\.irisgw\.cn)\/users\/\d+(\?|$),requires-body=1,max-size=0,debug=0,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.profile.js,script-update-interval=0
 
 [MITM]
-hostname = %APPEND% social.blued.cn,argo.blued.cn,*.bldimg.com,*.bldimg.cn,voice.irisgw.cn
+hostname = %APPEND% social.blued.cn,social.irisgw.cn,moments.irisgw.cn,argo.blued.cn,*.bldimg.com,*.bldimg.cn,voice.irisgw.cn
