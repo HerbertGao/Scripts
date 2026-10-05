@@ -60,13 +60,13 @@ for (const file of files) {
 }
 
 const source = read('Scripts/Blued/blued.profile.js');
-async function replay(url) {
+async function replay(url, profile = {}) {
   const messages = [];
   const writes = [];
   await new Promise(resolve => {
     vm.runInNewContext(source, {
       $request: { url },
-      $response: { body: JSON.stringify({ data: [{ uid: '123', name: 'fixture', tags: {} }] }) },
+      $response: { body: JSON.stringify({ data: [{ uid: '123', name: 'fixture', tags: {}, ...profile }] }) },
       $environment: { 'surge-version': 'test' },
       $notification: { post: (...args) => messages.push(args) },
       $persistentStore: { read: () => null, write: (...args) => { writes.push(args[1]); return true; } },
@@ -84,4 +84,38 @@ for (const url of profiles) {
 for (const url of [...blocked, ...other]) {
   assert.deepEqual(await replay(url), { messages: [], writes: [] }, `${url}: script overmatched`);
 }
-process.stdout.write(`Blued checks passed: ${files.length} configurations, legacy/new hosts, path boundaries, profile notifications/cache.\n`);
+const bmiCases = [
+  [180, 75, '23.1'],
+  ['180', '75', '23.1'],
+  [180, 30, '9.3'], // No height, weight or BMI range filtering.
+  [180, 200, '61.7'],
+  [100, 30, '30.0'],
+  [250, 300, '48.0'],
+  [undefined, 75, null],
+  [180, undefined, null],
+  [null, 75, null],
+  [0, 75, null],
+  [180, 0, null],
+  [-180, 75, null],
+  [180, -75, null],
+  ['Infinity', 75, null],
+  [180, 'Infinity', null],
+  [1e-200, 75, null], // Finite inputs, but the BMI calculation overflows.
+  ['invalid', 75, null],
+  [180, 'invalid', null],
+  [[180], 75, null],
+  [180, [75], null],
+];
+for (const [height, weight, bmi] of bmiCases) {
+  const { messages, writes } = await replay(profiles[1], { height, weight });
+  const bmiSuffix = bmi === null ? '' : ` (BMI ${bmi})`;
+  const subtitle = [
+    height ? `${height}cm` : null,
+    weight ? `${weight}kg${bmiSuffix}` : null,
+    '其它',
+  ].filter(Boolean).join(' / ');
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].slice(0, 3), ['Blued fixture (uid 123)', subtitle, '']);
+  assert.deepEqual(writes, []);
+}
+process.stdout.write(`Blued checks passed: ${files.length} configurations, legacy/new hosts, path boundaries, profile notifications/cache, ${bmiCases.length} BMI cases.\n`);
