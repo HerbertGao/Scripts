@@ -60,7 +60,7 @@ for (const file of files) {
 }
 
 const source = read('Scripts/Blued/blued.profile.js');
-async function replay(url, profile = {}) {
+async function replay(url, profile = {}, selfTags = null) {
   const messages = [];
   const writes = [];
   await new Promise(resolve => {
@@ -69,7 +69,10 @@ async function replay(url, profile = {}) {
       $response: { body: JSON.stringify({ data: [{ uid: '123', name: 'fixture', tags: {}, ...profile }] }) },
       $environment: { 'surge-version': 'test' },
       $notification: { post: (...args) => messages.push(args) },
-      $persistentStore: { read: () => null, write: (...args) => { writes.push(args[1]); return true; } },
+      $persistentStore: {
+        read: key => key === 'blued_self_tags' && selfTags !== null ? JSON.stringify(selfTags) : null,
+        write: (...args) => { writes.push(args[1]); return true; },
+      },
       $done: resolve,
       console: { log() {} },
     }, { timeout: 1000 });
@@ -118,4 +121,55 @@ for (const [height, weight, bmi] of bmiCases) {
   assert.deepEqual(messages[0].slice(0, 3), ['Blued fixture (uid 123)', subtitle, '']);
   assert.deepEqual(writes, []);
 }
-process.stdout.write(`Blued checks passed: ${files.length} configurations, legacy/new hosts, path boundaries, profile notifications/cache, ${bmiCases.length} BMI cases.\n`);
+const tag = (name, id = 'fixture') => ({ name, id });
+const matchCases = [
+  {
+    name: 'shared preferences, body types, jobs and MBTI are not highlights',
+    self: { love_type: [tag('肌肉')], type: [tag('匀称')], work: [tag('IT')], mbti: [tag('F')] },
+    tags: { love_type: [tag('肌肉')], type: [tag('匀称')], work: [tag('IT')], mbti: [tag('F')] },
+    expected: ['我喜欢：肌肉'],
+  },
+  {
+    name: 'modern fields, both directions, distinct preference/trait IDs',
+    self: { love_physical: [tag('短发', 'p1')], personality: [tag('阳光', 't2')] },
+    tags: { physical: [tag('短发', 't1')], love_personality: [tag('阳光', 'p2')] },
+    expected: ['对方符合我的偏好：短发', '我符合对方的偏好：阳光', '我喜欢：阳光'],
+  },
+  {
+    name: 'legacy fields and one-way match',
+    self: { love_type: [tag('肌肉')], love_character: [tag('阳光')] },
+    tags: { type: [tag('肌肉')], character: [tag('阳光')] },
+    expected: ['对方符合我的偏好：肌肉、阳光'],
+  },
+  {
+    name: 'merge rather than replace legacy fields, deduplicate and normalize known alias',
+    self: { love_type: [tag('肌肉')], love_physical: [tag('肌肉'), tag('肉壯')] },
+    tags: { type: [tag('肌肉')], physical: [tag('肉壮')], love_type: [tag('肌肉')], love_physical: [tag('肌肉'), tag('肉壯')] },
+    expected: ['对方符合我的偏好：肌肉、肉壮', '我喜欢：肌肉、肉壮'],
+  },
+  {
+    name: 'shared interests and goals remain distinct',
+    self: { hobbies: [tag('电影')], recreation: [tag('电影'), tag('旅行')], i_want: [tag('交朋友')] },
+    tags: { hobbies: [tag('电影')], recreation: [tag('电影'), tag('旅行')], i_want: [tag('交朋友')] },
+    expected: ['共同兴趣：电影、旅行', '共同目的：交朋友', '我想找：交朋友'],
+  },
+  {
+    name: 'no self cache, modern preference display still deduplicates',
+    self: null,
+    tags: { physical: [tag('肌肉')], love_physical: [tag('短发')], love_type: [tag('短发')] },
+    expected: ['我喜欢：短发'],
+  },
+  {
+    name: 'no matching across unrelated categories; ignore invalid entries',
+    self: { love_physical: [tag('阳光'), null, { name: 1 }], love_personality: null, hobbies: [tag('电影')] },
+    tags: { personality: [tag('阳光')], physical: {}, recreation: [tag('电影')] },
+    expected: [],
+  },
+];
+for (const { name, self, tags, expected } of matchCases) {
+  const { messages, writes } = await replay(profiles[1], { tags }, self);
+  assert.equal(messages.length, 1, name);
+  assert.equal(messages[0][2], expected.join('\n'), name);
+  assert.deepEqual(writes, [], name);
+}
+process.stdout.write(`Blued checks passed: ${files.length} configurations, legacy/new hosts, path boundaries, profile notifications/cache, ${bmiCases.length} BMI cases, ${matchCases.length} tag matching cases.\n`);
