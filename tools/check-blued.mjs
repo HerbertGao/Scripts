@@ -127,13 +127,13 @@ const matchCases = [
     name: 'shared preferences, body types, jobs and MBTI are not highlights',
     self: { love_type: [tag('肌肉')], type: [tag('匀称')], work: [tag('IT')], mbti: [tag('F')] },
     tags: { love_type: [tag('肌肉')], type: [tag('匀称')], work: [tag('IT')], mbti: [tag('F')] },
-    expected: ['我喜欢：肌肉'],
+    expected: ['对方喜欢：肌肉'],
   },
   {
     name: 'modern fields, both directions, distinct preference/trait IDs',
     self: { love_physical: [tag('短发', 'p1')], personality: [tag('阳光', 't2')] },
     tags: { physical: [tag('短发', 't1')], love_personality: [tag('阳光', 'p2')] },
-    expected: ['对方符合我的偏好：短发', '我符合对方的偏好：阳光', '我喜欢：阳光'],
+    expected: ['对方符合我的偏好：短发', '我符合对方的偏好：阳光', '对方喜欢：阳光'],
   },
   {
     name: 'legacy fields and one-way match',
@@ -145,19 +145,19 @@ const matchCases = [
     name: 'merge rather than replace legacy fields, deduplicate and normalize known alias',
     self: { love_type: [tag('肌肉')], love_physical: [tag('肌肉'), tag('肉壯')] },
     tags: { type: [tag('肌肉')], physical: [tag('肉壮')], love_type: [tag('肌肉')], love_physical: [tag('肌肉'), tag('肉壯')] },
-    expected: ['对方符合我的偏好：肌肉、肉壮', '我喜欢：肌肉、肉壮'],
+    expected: ['对方符合我的偏好：肌肉、肉壮', '对方喜欢：肌肉、肉壮'],
   },
   {
     name: 'shared interests and goals remain distinct',
     self: { hobbies: [tag('电影')], recreation: [tag('电影'), tag('旅行')], i_want: [tag('交朋友')] },
     tags: { hobbies: [tag('电影')], recreation: [tag('电影'), tag('旅行')], i_want: [tag('交朋友')] },
-    expected: ['共同兴趣：电影、旅行', '共同目的：交朋友', '我想找：交朋友'],
+    expected: ['共同兴趣：电影、旅行', '共同目的：交朋友', '对方想找：交朋友'],
   },
   {
     name: 'no self cache, modern preference display still deduplicates',
     self: null,
     tags: { physical: [tag('肌肉')], love_physical: [tag('短发')], love_type: [tag('短发')] },
-    expected: ['我喜欢：短发'],
+    expected: ['对方喜欢：短发'],
   },
   {
     name: 'no matching across unrelated categories; ignore invalid entries',

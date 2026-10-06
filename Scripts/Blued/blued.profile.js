@@ -44,8 +44,8 @@ function handleProfile(uidFromUrl) {
   const iWant = tagNames(tags.i_want);
   const iLike = tagValues(tags, ['love_physical', 'love_type', 'love_personality', 'love_character']).join('、');
   lines.push(...matchHighlights(tags));
-  if (iWant) lines.push(`我想找：${iWant}`);
-  if (iLike) lines.push(`我喜欢：${iLike}`);
+  if (iWant) lines.push(`对方想找：${iWant}`);
+  if (iLike) lines.push(`对方喜欢：${iLike}`);
 
   $.msg(title, line2, lines.join('\n'));
 }
