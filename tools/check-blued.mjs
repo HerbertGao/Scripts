@@ -108,7 +108,7 @@ const bmiCases = [
 ];
 for (const [height, weight, bmi] of bmiCases) {
   const { messages, writes } = await replay(profiles[1], { height, weight });
-  const bmiSuffix = bmi === null ? '' : ` (BMI ${bmi})`;
+  const bmiSuffix = bmi === null ? '' : ` / BMI ${bmi}`;
   const subtitle = [
     height ? `${height}cm` : null,
     weight ? `${weight}kg${bmiSuffix}` : null,

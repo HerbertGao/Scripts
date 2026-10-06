@@ -57,7 +57,7 @@ function bmiText(height, weight) {
   const kg = Number(weight);
   if (!Number.isFinite(cm) || cm <= 0 || !Number.isFinite(kg) || kg <= 0) return '';
   const bmi = kg / (cm / 100) ** 2;
-  return Number.isFinite(bmi) && bmi > 0 ? ` (BMI ${bmi.toFixed(1)})` : '';
+  return Number.isFinite(bmi) && bmi > 0 ? ` / BMI ${bmi.toFixed(1)}` : '';
 }
 
 // 型号：role 仅 1 / 0 / 0.5 / Side 有效，其余（-1/-2/空）显示"其它"
