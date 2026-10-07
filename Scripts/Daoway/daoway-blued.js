@@ -434,13 +434,15 @@ function kickWorker() {
     }, (err, _resp) => log("[到位×Blued] kick " + addr + " " + (err ? "失败: " + err : "已发出(" + ((_resp && _resp.status) || "?") + ")")));
   }
 }
-// 三个入口:
+// 四个入口:
 //   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
-//   B) 拦到到位技师主页 by_buyer → 记入最近命中列表立即放行 (App 会批量预取列表页可见技师,
-//      实测同秒 4 连发 0ms 间隔; 用户点开的都是孤立单发)
-//   C) worker(kick 或 cron): 等 2.5s 让预取批次到齐后判定, 只处理孤立请求 → 点谁推谁
-const HITS_KEY = "dw_blued_hits", RUNNING_KEY = "dw_blued_running";
-const HIT_TTL = 70000, SETTLE_MS = 2500, BURST_MS = 2000;
+//   B) 拦到到位 by_buyer(预取/点开都会发) → 只缓存最新坐标 lat/lng 立即放行
+//   C) 拦到到位 technician/{id}/click → 确定性"用户点开了谁"埋点(HAR 实证: 预取无 click,
+//      点开必有 click) → 入队 + kick, 立即放行
+//   D) worker(kick 或 cron): 排空队列逐个匹配推送; 推送队列按点击计, 不轰炸
+const RUNNING_KEY = "dw_blued_running", PUSHED_KEY = "dw_pushed", KICK_TS_KEY = "dw_kick_ts";
+const DW_GEO_KEY = "dw_dw_geo", QUEUE_KEY = "dw_click_queue";
+const QUEUE_CAP = 8;
 
 async function runMatch(dwid, lat, lng) {
   if (!lat || !lng) throw new Error("没有坐标, 无法定位匹配");
@@ -496,61 +498,59 @@ if (typeof $request !== "undefined" && $request.url) {
     }
     $done({});
   } else {
-    // 到位技师主页: 只记命中, 立即放行 (无坐标无法匹配, 不记)
-    const m = url.match(/technician\/v2\/(\d+)\/by_buyer/);
-    const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
-    const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
-    if (m && lat && lng) {
-      log("[到位×Blued] 主页触发 dwid=" + m[1]);
-      const hits = readJSON(HITS_KEY) || [];
-      const now = Date.now();
-      hits.push({ dwid: m[1], lat, lng, t: now });
-      if (!$persistentStore.write(JSON.stringify(hits.filter(h => now - h.t < HIT_TTL)), HITS_KEY))
-        log("dw_blued_hits 写入失败");
-      kickWorker();
+    // B) by_buyer(预取+点开都发): 只更新最新坐标
+    if (/technician\/v2\/\d+\/by_buyer/.test(url)) {
+      const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
+      const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
+      if (lat && lng && !$persistentStore.write(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), DW_GEO_KEY))
+        log("dw_dw_geo 写入失败");
+      return $done({});
+    }
+    // C) click 埋点 = 用户点开了这位 (确定性)
+    const mc = url.match(/technician\/(\d+)\/click/);
+    if (mc) {
+      const geo = readJSON(DW_GEO_KEY);
+      if (geo && geo.lat) {
+        log("[到位×Blued] 点击技师 dwid=" + mc[1]);
+        const q = (readJSON(QUEUE_KEY) || []).filter(x => x.dwid !== mc[1]);
+        q.push({ dwid: mc[1], lat: geo.lat, lng: geo.lng });
+        if (!$persistentStore.write(JSON.stringify(q.slice(-QUEUE_CAP)), QUEUE_KEY)) log("dw_click_queue 写入失败");
+        const lastKick = Number($persistentStore.read(KICK_TS_KEY)) || 0;
+        if (Date.now() - lastKick >= 3000) {
+          if (!$persistentStore.write(String(Date.now()), KICK_TS_KEY)) log("dw_kick_ts 写入失败");
+          kickWorker();
+        }
+      } else log("[到位×Blued] 无到位坐标(尚未被 by_buyer 缓存), 跳过");
     }
     $done({});
   }
 } else {
-  // worker: 处理"孤立"命中 (距其它不同 dwid 命中 >2s 且已过 2.2s 存活期) → 点谁推谁
-  function pickSolo(hits, now) {
-    const fresh = hits.filter(h => now - h.t < HIT_TTL);
-    for (const h of fresh.slice().reverse()) {
-      const near = fresh.some(o => o.dwid !== h.dwid && Math.abs(o.t - h.t) <= BURST_MS);
-      if (!near && now - h.t > BURST_MS + 200) return h;
+  // worker: 排空点击队列逐个匹配推送; 处理期间新到点击由循环尾部重读接住
+  // kick 双地址双发时, 第二个 worker 见 RUNNING 新鲜即退出, 由活跃 worker 的循环兜住
+  const now0 = Date.now();
+  const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
+  if (now0 - lastRun < 10000 && lastRun > 0) return $done({});  // 已有活跃 worker
+  if (!$persistentStore.write(String(now0), RUNNING_KEY)) log("dw_blued_running 写入失败");
+  (async () => {
+    for (;;) {
+      const queue = readJSON(QUEUE_KEY) || [];
+      if (!Array.isArray(queue) || !queue.length) break;
+      if (!$persistentStore.write("", QUEUE_KEY)) log("队列清理失败");
+      for (const item of queue) {
+        // 幂等: 同 dwid 10s 内已推过则跳过
+        const pushed = readJSON(PUSHED_KEY);
+        if (pushed && pushed.dwid === item.dwid && Date.now() - pushed.t < 10000) continue;
+        if (!$persistentStore.write(JSON.stringify({ dwid: item.dwid, t: Date.now() }), PUSHED_KEY)) log("dw_pushed 写入失败");
+        try { await runMatch(item.dwid, item.lat, item.lng); }
+        catch (e) {
+          log("FATAL: " + (e && e.stack || e));
+          $notification.post("到位匹配没跑成", "", String(e && e.message || e));
+        }
+      }
     }
-    return null;
-  }
-  function launch(solo) {
-    if (!$persistentStore.write(String(Date.now()), RUNNING_KEY)) log("dw_blued_running 写入失败");
-    if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败");
-    runMatch(solo.dwid, solo.lat, solo.lng)
-      .catch(e => {
-        log("FATAL: " + (e && e.stack || e));
-        $notification.post("到位匹配没跑成", "", String(e && e.message || e));
-      })
-      .finally(() => $done({}));
-  }
-  const hits = readJSON(HITS_KEY) || [];
-  if (!hits.length) { $done({}); }
-  else if (Date.now() - (Number($persistentStore.read(RUNNING_KEY)) || 0) < 30000) { $done({}); }  // 30s 防双跑
-  else {
-    const solo = pickSolo(hits, Date.now());
-    if (solo) {
-      launch(solo);
-    } else if (Date.now() - Math.max(...hits.map(h => h.t)) < HIT_TTL) {
-      // 命中还新鲜但未过存活期: 等 2.5s 让预取批次到齐再判 (会话常驻, 不调 $done)
-      log("[到位×Blued] 等 " + SETTLE_MS + "ms 判定预取批次");
-      setTimeout(() => {
-        const solo2 = pickSolo(readJSON(HITS_KEY) || [], Date.now());
-        if (solo2) launch(solo2);
-        else { if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败"); $done({}); }
-      }, SETTLE_MS);
-    } else {
-      if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败");
-      $done({});
-    }
-  }
+    if (!$persistentStore.write("", RUNNING_KEY)) log("dw_blued_running 清理失败");
+    $done({});
+  })();
 }
 } catch (e) {
   log("FATAL: " + (e && e.stack || e));
