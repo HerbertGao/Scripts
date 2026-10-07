@@ -19,7 +19,7 @@ const BLUED = {
 // 凭证/坐标不硬编码: 拦截 Blued App 自身请求时缓存
 //   dw_blued_auth = authorization 头(Basic uid:token)
 //   dw_blued_geo  = {lat,lng} App 请求里的定位
-const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo", RUNNING_KEY = "dw_blued_running";
+const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo";
 // 可选秒级推送: 模块参数 HTTP_API 只填 Surge http-api 的密码(需先在配置 [General] 开启 http-api);
 // 端口自动尝试 6171/6170, 也可 "密码@host:port" 指定; 不填则等 cron 兜底(≤1分钟)
 const HTTP_API = (typeof $argument === "string" && /HTTP_API="([^"]*)"/.test($argument)) ? $argument.match(/HTTP_API="([^"]*)"/)[1].trim() : "";
@@ -436,9 +436,11 @@ function kickWorker() {
 }
 // 三个入口:
 //   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
-//   B) 拦到到位技师主页 by_buyer → 只记一笔待办立即放行, 不阻塞到位 App
-//   C) cron 每分钟: 有待办就跑匹配并推送 (重活在后台任务里做)
-const PENDING_KEY = "dw_blued_pending";
+//   B) 拦到到位技师主页 by_buyer → 记入最近命中列表立即放行 (App 会批量预取列表页可见技师,
+//      实测同秒 4 连发 0ms 间隔; 用户点开的都是孤立单发)
+//   C) worker(kick 或 cron): 等 2.5s 让预取批次到齐后判定, 只处理孤立请求 → 点谁推谁
+const HITS_KEY = "dw_blued_hits", RUNNING_KEY = "dw_blued_running";
+const HIT_TTL = 70000, SETTLE_MS = 2500, BURST_MS = 2000;
 
 async function runMatch(dwid, lat, lng) {
   if (!lat || !lng) throw new Error("没有坐标, 无法定位匹配");
@@ -494,35 +496,60 @@ if (typeof $request !== "undefined" && $request.url) {
     }
     $done({});
   } else {
-    // 到位技师主页: 只记待办, 立即放行 (无坐标无法匹配, 不记)
+    // 到位技师主页: 只记命中, 立即放行 (无坐标无法匹配, 不记)
     const m = url.match(/technician\/v2\/(\d+)\/by_buyer/);
     const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
     if (m && lat && lng) {
       log("[到位×Blued] 主页触发 dwid=" + m[1]);
-      if (!$persistentStore.write(JSON.stringify({ dwid: m[1], lat, lng, t: Date.now() }), PENDING_KEY))
-        log("dw_blued_pending 写入失败");
+      const hits = readJSON(HITS_KEY) || [];
+      const now = Date.now();
+      hits.push({ dwid: m[1], lat, lng, t: now });
+      if (!$persistentStore.write(JSON.stringify(hits.filter(h => now - h.t < HIT_TTL)), HITS_KEY))
+        log("dw_blued_hits 写入失败");
       kickWorker();
     }
     $done({});
   }
 } else {
-  // cron worker: 有待办 → 先清掉再跑 (重活在这里, 不占 App 请求路径)
-  const task = readJSON(PENDING_KEY);
-  if (task && task.dwid) log("[到位×Blued] worker 取到待办 dwid=" + task.dwid);
-  const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
-  if (task && task.dwid && Date.now() - lastRun < 30000) return $done({});  // 30s 内已跑过, 防 kick/cron 双跑
-  if (task && task.dwid) {
+  // worker: 处理"孤立"命中 (距其它不同 dwid 命中 >2s 且已过 2.2s 存活期) → 点谁推谁
+  function pickSolo(hits, now) {
+    const fresh = hits.filter(h => now - h.t < HIT_TTL);
+    for (const h of fresh.slice().reverse()) {
+      const near = fresh.some(o => o.dwid !== h.dwid && Math.abs(o.t - h.t) <= BURST_MS);
+      if (!near && now - h.t > BURST_MS + 200) return h;
+    }
+    return null;
+  }
+  function launch(solo) {
     if (!$persistentStore.write(String(Date.now()), RUNNING_KEY)) log("dw_blued_running 写入失败");
-    if (!$persistentStore.write("", PENDING_KEY)) log("待办清理失败");
-    runMatch(task.dwid, task.lat, task.lng)
+    if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败");
+    runMatch(solo.dwid, solo.lat, solo.lng)
       .catch(e => {
         log("FATAL: " + (e && e.stack || e));
         $notification.post("到位匹配没跑成", "", String(e && e.message || e));
       })
       .finally(() => $done({}));
-  } else {
-    $done({});
+  }
+  const hits = readJSON(HITS_KEY) || [];
+  if (!hits.length) { $done({}); }
+  else if (Date.now() - (Number($persistentStore.read(RUNNING_KEY)) || 0) < 30000) { $done({}); }  // 30s 防双跑
+  else {
+    const solo = pickSolo(hits, Date.now());
+    if (solo) {
+      launch(solo);
+    } else if (Date.now() - Math.max(...hits.map(h => h.t)) < HIT_TTL) {
+      // 命中还新鲜但未过存活期: 等 2.5s 让预取批次到齐再判 (会话常驻, 不调 $done)
+      log("[到位×Blued] 等 " + SETTLE_MS + "ms 判定预取批次");
+      setTimeout(() => {
+        const solo2 = pickSolo(readJSON(HITS_KEY) || [], Date.now());
+        if (solo2) launch(solo2);
+        else { if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败"); $done({}); }
+      }, SETTLE_MS);
+    } else {
+      if (!$persistentStore.write("", HITS_KEY)) log("待办清理失败");
+      $done({});
+    }
   }
 }
 } catch (e) {
