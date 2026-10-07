@@ -1,0 +1,11 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/daoway-blued.module
+#!name= 到位×Blued 匹配
+#!desc= 打开到位技师主页时，自动在 Blued 附近的人里找年龄身高体重接近的账号并推送。首次使用：先打开一次 Blued 附近的人（缓存凭证和定位）。需开启 MITM。
+#!category=HerbertGao's Scripts
+
+[Script]
+到位匹配 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0
+Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0
+
+[MITM]
+hostname = %APPEND% api.daoway.cn,social.irisgw.cn
