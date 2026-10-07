@@ -19,7 +19,11 @@ const BLUED = {
 // 凭证/坐标不硬编码: 拦截 Blued App 自身请求时缓存
 //   dw_blued_auth = authorization 头(Basic uid:token)
 //   dw_blued_geo  = {lat,lng} App 请求里的定位
-const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo";
+const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo", RUNNING_KEY = "dw_blued_running";
+// 可选秒级推送: Surge 配置 [General] 开启 http-api = 密码@127.0.0.1:6171 后, 在此填 "密码@127.0.0.1:6171";
+// 不填则等 cron 兜底(≤1分钟)
+const HTTP_API = "";
+const WORKER_NAME = "到位匹配任务";
 
 /* ============ 工具: base64 / bytes ============ */
 const B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -411,6 +415,17 @@ async function matchTech(t) {
 }
 
 /* ============ Surge 环境 ============ */
+// 通过 HTTP API 立即拉起 worker (未开启 http-api 时静默跳过, cron 兜底)
+function kickWorker() {
+  if (!HTTP_API) return;
+  const [key, addr] = HTTP_API.split("@");
+  $httpClient.post({
+    url: "http://" + addr + "/v1/scripting/cron/evaluate",
+    body: JSON.stringify({ script_name: WORKER_NAME }),
+    headers: { "X-Key": key, "Content-Type": "application/json" },
+    policy: "DIRECT",
+  }, () => {});
+}
 // 三个入口:
 //   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
 //   B) 拦到到位技师主页 by_buyer → 只记一笔待办立即放行, 不阻塞到位 App
@@ -477,13 +492,17 @@ if (typeof $request !== "undefined" && $request.url) {
     if (m && lat && lng) {
       if (!$persistentStore.write(JSON.stringify({ dwid: m[1], lat, lng, t: Date.now() }), PENDING_KEY))
         $console.log("dw_blued_pending 写入失败");
+      kickWorker();
     }
     $done({});
   }
 } else {
   // cron worker: 有待办 → 先清掉再跑 (重活在这里, 不占 App 请求路径)
   const task = readJSON(PENDING_KEY);
+  const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
+  if (task && task.dwid && Date.now() - lastRun < 30000) return $done({});  // 30s 内已跑过, 防 kick/cron 双跑
   if (task && task.dwid) {
+    if (!$persistentStore.write(String(Date.now()), RUNNING_KEY)) $console.log("dw_blued_running 写入失败");
     if (!$persistentStore.write("", PENDING_KEY)) $console.log("待办清理失败");
     runMatch(task.dwid, task.lat, task.lng)
       .catch(e => {
