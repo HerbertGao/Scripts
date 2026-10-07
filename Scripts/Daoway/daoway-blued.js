@@ -318,7 +318,7 @@ function dwGet(path, params) {
         const j = JSON.parse(data);
         if (j && String(j.encrypt) === "1" && j.publickey) {
           const root = JSON.parse(utf8Decode(aesGcmDecrypt(dwAesKey(), b64decode(j.data))));
-          if (!root || (root.status !== "success" && !root.data)) throw new Error("到位返回异常: " + JSON.stringify(root).slice(0, 200));
+          if (!root || root.status !== "success" || !root.data) throw new Error("到位返回异常: " + JSON.stringify(root).slice(0, 200));
           resolve(root);
         } else if (j && j.status === "success" && j.data) {
           resolve(j);
@@ -331,7 +331,7 @@ function dwGet(path, params) {
 }
 
 /* ============ Blued 客户端 ============ */
-function parseNum(v) { const m = String(v || "").match(/\d+/); return m ? parseInt(m[0]) : null; }
+function parseNum(v) { const m = String(v ?? "").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; }
 function readJSON(key) {
   try { return JSON.parse($persistentStore.read(key)); } catch { return null; }
 }
@@ -348,7 +348,7 @@ function bluedNearby(filters) {
     };
     $httpClient.get({
       url: BLUED.social + "/users?" + Object.keys(q).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(String(q[k]))).join("&"),
-      headers: { authorization: auth, accept: "*/*", "user-agent": "Blued/7.50.3 (iPhone; iOS 27.0.1)" },
+      headers: { authorization: auth, accept: "*/*", "x-dwblued": "1", "user-agent": "Blued/7.50.3 (iPhone; iOS 27.0.1)" },
     }, (err, _resp, data) => {
       if (err) return reject(new Error(String(err && err.message || err)));
       try {
@@ -411,15 +411,54 @@ async function matchTech(t) {
 }
 
 /* ============ Surge 环境 ============ */
-// 两个触发点:
-//   A) 拦到 Blued App 自己的 /users 请求 → 缓存 authorization + 定位 (首次使用各开一次即可)
-//   B) 拦到到位技师主页 /technician/v2/{dwid}/by_buyer → 匹配推送
+// 三个入口:
+//   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
+//   B) 拦到到位技师主页 by_buyer → 只记一笔待办立即放行, 不阻塞到位 App
+//   C) cron 每分钟: 有待办就跑匹配并推送 (重活在后台任务里做)
+const PENDING_KEY = "dw_blued_pending";
+
+async function runMatch(dwid, lat, lng) {
+  if (!lat || !lng) throw new Error("没有坐标, 无法定位匹配");
+  let detail;
+  try {
+    detail = (await dwGet("/technician/v2/" + dwid + "/by_buyer", { lat, lng })).data;
+  } catch (e) { throw new Error("到位查询失败: " + (e && e.message || e)); }
+  if (!detail) throw new Error("到位返回档案为空");
+  const t = { age: parseInt(detail.age), ht: parseNum(detail.height), wt: parseNum(detail.weight),
+              distance: parseNum(detail.distance) };
+  const sub = [t.age && t.age + "岁", t.ht && t.ht + "cm", t.wt && t.wt + "kg", detail.constellation]
+    .filter(Boolean).join("·");
+  const title = (detail.name || "到位技师 " + dwid) + "（到位 " + (detail.distanceView ? detail.distanceView + "km" : "距离未知") + "）";
+  if (!t.age && !t.ht && !t.wt) {
+    $notification.post(title, sub || "", "这个技师没留年龄身高体重，Blued 上没法比，先不找了");
+    return;
+  }
+  const r = await matchTech(t);
+  if (!$persistentStore.write(JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
+    age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top }), "dw_blued_match"))
+    $console.log("dw_blued_match 写入失败");
+  if (r.top.length) {
+    $notification.post(title, sub,
+      r.top.map(c => {
+        const parts = [(c.name || "Blued " + c.uid) + "（uid " + c.uid + "）", "⭐".repeat(c.stars)];
+        const body = [c.age && parseInt(c.age) + "岁", c.height && c.height + "cm", c.weight && c.weight + "kg",
+          c.distance != null && Number(c.distance) < 9999 && "离你" + Number(c.distance).toFixed(1) + "km",
+          Number(c.online) === 1 && "在线"].filter(Boolean).join(" ");
+        return parts.join(" ") + "\n    " + body;
+      }).join("\n"));
+  } else {
+    $notification.post(title, sub, "Blued 附近没找到接近的人，先不推了");
+  }
+}
+
 if (typeof $request !== "undefined" && $request.url) {
   const url = String($request.url);
   const headers = $request.headers || {};
   // 脚本自身发起的请求会再命中拦截 pattern → 靠标记头键名防递归
   const selfReq = Object.keys(headers).some(k => String(k).toLowerCase() === "x-dwblued");
-  if (!selfReq && /social\.irisgw\.cn\/users(?:\?|$)/.test(url)) {
+  if (selfReq) {
+    $done({});
+  } else if (/social\.irisgw\.cn\/users(?:\?|$)/.test(url)) {
     const authEntry = Object.entries(headers).find(([k]) => String(k).toLowerCase() === "authorization");
     const lat = (url.match(/latitude=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/longitude=(-?[\d.]+)/) || [])[1];
@@ -431,54 +470,28 @@ if (typeof $request !== "undefined" && $request.url) {
     }
     $done({});
   } else {
-  const m = url.match(/technician\/v2\/(\d+)\/by_buyer/);
-  if (m) {
-    const dwid = m[1];
-    // 定位用 App 原始请求里的实时坐标
+    // 到位技师主页: 只记待办, 立即放行 (无坐标无法匹配, 不记)
+    const m = url.match(/technician\/v2\/(\d+)\/by_buyer/);
     const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
-    (async () => {
-      if (!lat || !lng) throw new Error("到位请求里没有坐标, 无法定位匹配");
-      let detail;
-      try {
-        detail = (await dwGet("/technician/v2/" + dwid + "/by_buyer", { lat, lng })).data;
-      } catch (e) { throw new Error("到位查询失败: " + (e && e.message || e)); }
-      if (!detail) throw new Error("到位返回档案为空");
-      const t = { age: parseInt(detail.age), ht: parseNum(detail.height), wt: parseNum(detail.weight),
-                  distance: parseNum(detail.distance) };
-      const sub = [t.age && t.age + "岁", t.ht && t.ht + "cm", t.wt && t.wt + "kg", detail.constellation]
-        .filter(Boolean).join("·");
-      const title = (detail.name || "到位技师 " + dwid) + "（到位 " + (detail.distanceView ? detail.distanceView + "km" : "距离未知") + "）";
-      if (!t.age && !t.ht && !t.wt) {
-        $notification.post(title, sub || "", "这个技师没留年龄身高体重，Blued 上没法比，先不找了");
-        return $done({});
-      }
-      const r = await matchTech(t);
-      const store = JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
-        age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top });
-      if (!$persistentStore.write(store, "dw_blued_match")) $console.log("dw_blued_match 写入失败");
-      if (r.top.length) {
-        $notification.post(title, sub,
-          r.top.map(c => {
-            const parts = [(c.name || "Blued " + c.uid) + "（uid " + c.uid + "）", "⭐".repeat(c.stars)];
-            const body = [c.age && parseInt(c.age) + "岁", c.height && c.height + "cm", c.weight && c.weight + "kg",
-              c.distance != null && Number.isFinite(Number(c.distance)) && Number(c.distance) < 9999 && "离你" + Number(c.distance).toFixed(1) + "km",
-              c.online && "在线"].filter(Boolean).join(" ");
-            return parts.join(" ") + "\n    " + body;
-          }).join("\n"));
-      } else {
-        $notification.post(title, sub, "Blued 附近没找到接近的人，先不推了");
-      }
-      $done({});
-    })().catch(e => {
-      $console.log("FATAL: " + (e && e.stack || e));
-      $notification.post("到位匹配没跑成", "", String(e && e.message || e));
-      $done({});
-    });
+    if (m && lat && lng) {
+      if (!$persistentStore.write(JSON.stringify({ dwid: m[1], lat, lng, t: Date.now() }), PENDING_KEY))
+        $console.log("dw_blued_pending 写入失败");
+    }
+    $done({});
+  }
+} else {
+  // cron worker: 有待办 → 先清掉再跑 (重活在这里, 不占 App 请求路径)
+  const task = readJSON(PENDING_KEY);
+  if (task && task.dwid) {
+    if (!$persistentStore.write("", PENDING_KEY)) $console.log("待办清理失败");
+    runMatch(task.dwid, task.lat, task.lng)
+      .catch(e => {
+        $console.log("FATAL: " + (e && e.stack || e));
+        $notification.post("到位匹配没跑成", "", String(e && e.message || e));
+      })
+      .finally(() => $done({}));
   } else {
     $done({});
   }
-  }
-} else {
-  $done({});
 }
