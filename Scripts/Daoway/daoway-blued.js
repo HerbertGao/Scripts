@@ -20,9 +20,10 @@ const BLUED = {
 //   dw_blued_auth = authorization 头(Basic uid:token)
 //   dw_blued_geo  = {lat,lng} App 请求里的定位
 const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo", RUNNING_KEY = "dw_blued_running";
-// 可选秒级推送: 模块参数 HTTP_API, 填 Surge [General] 里 http-api 的 "密码@127.0.0.1:6171"
-// (需先在配置 [General] 加 http-api = 密码@127.0.0.1:6171); 不填则等 cron 兜底(≤1分钟)
+// 可选秒级推送: 模块参数 HTTP_API 只填 Surge http-api 的密码(需先在配置 [General] 开启 http-api);
+// 端口自动尝试 6171/6170, 也可 "密码@host:port" 指定; 不填则等 cron 兜底(≤1分钟)
 const HTTP_API = (typeof $argument === "string" && /HTTP_API="([^"]*)"/.test($argument)) ? $argument.match(/HTTP_API="([^"]*)"/)[1].trim() : "";
+const HTTP_API_ADDRS = ["127.0.0.1:6171", "127.0.0.1:6170"];
 const WORKER_NAME = "到位匹配任务";
 
 /* 日志: $console 不保证存在, 退回 console 并静默兜底 */
@@ -422,13 +423,16 @@ async function matchTech(t) {
 // 通过 HTTP API 立即拉起 worker (未开启 http-api 时静默跳过, cron 兜底)
 function kickWorker() {
   if (!HTTP_API) return;
-  const [key, addr] = HTTP_API.split("@");
-  $httpClient.post({
-    url: "http://" + addr + "/v1/scripting/cron/evaluate",
-    body: JSON.stringify({ script_name: WORKER_NAME }),
-    headers: { "X-Key": key, "Content-Type": "application/json" },
-    policy: "DIRECT",
-  }, (err, _resp) => log("[到位×Blued] kick " + (err ? "失败: " + err : "已发出(" + ((_resp && _resp.status) || "?") + ")")));
+  const [key, addrOverride] = HTTP_API.split("@");
+  const addrs = addrOverride ? [addrOverride] : HTTP_API_ADDRS;
+  for (const addr of addrs) {
+    $httpClient.post({
+      url: "http://" + addr + "/v1/scripting/cron/evaluate",
+      body: JSON.stringify({ script_name: WORKER_NAME }),
+      headers: { "X-Key": key, "Content-Type": "application/json" },
+      policy: "DIRECT",
+    }, (err, _resp) => log("[到位×Blued] kick " + addr + " " + (err ? "失败: " + err : "已发出(" + ((_resp && _resp.status) || "?") + ")")));
+  }
 }
 // 三个入口:
 //   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
