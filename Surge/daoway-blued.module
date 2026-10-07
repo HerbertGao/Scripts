@@ -2,16 +2,15 @@
 #!name= 到位×Blued 匹配
 #!desc= 打开到位技师主页时，自动在 Blued 附近的人里找年龄身高体重接近的账号并推送。首次使用：先打开一次 Blued 附近的人（缓存凭证和定位）。需开启 MITM。匹配在后台完成，不阻塞到位 App。可选秒级推送：配置 [General] 加 http-api = 密码@127.0.0.1:6171，再到模块参数里填同一值。
 #!category=HerbertGao's Scripts
-
-[Argument]
-HTTP_API = label="HTTP API 密码@127.0.0.1:6171 (选填, 开启后秒级推送, 值需与配置 http-api 一致, 不要含逗号引号)", default="", required=false
+#!arguments = HTTP_API:""
+#!arguments-desc = HTTP_API: [推送方式] Surge HTTP API\n    ├ 留空: 用 cron 兜底, 打开主页后 1 分钟内推送\n    └ 填写: 秒级推送, 值为配置 [General] 里 http-api 的 "密码@127.0.0.1:6171"\n需先在配置 [General] 添加 http-api = 密码@127.0.0.1:6171，模块参数填同一值（不含逗号引号）。
 
 [Rule]
 URL-REGEX,^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer,DIRECT
 URL-REGEX,^https:\/\/social\.irisgw\.cn\/users\?,DIRECT
 
 [Script]
-到位主页记录 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0, argument={{{HTTP_API}}}
+到位主页记录 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0, argument=HTTP_API="{{{HTTP_API}}}"
 Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0
 到位匹配任务 = type=cron, cron=* * * * *, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js, script-update-interval=0, timeout=300
 
