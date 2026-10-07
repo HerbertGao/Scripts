@@ -25,6 +25,9 @@ const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo", RUNNING_KEY = "dw_bl
 const HTTP_API = (typeof $argument === "string" && /HTTP_API="([^"]*)"/.test($argument)) ? $argument.match(/HTTP_API="([^"]*)"/)[1].trim() : "";
 const WORKER_NAME = "到位匹配任务";
 
+/* 日志: $console 不保证存在, 退回 console 并静默兜底 */
+function log(msg) { try { ($console || console).log(msg); } catch (e) {} }
+
 /* ============ 工具: base64 / bytes ============ */
 const B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function b64decode(str) {
@@ -451,7 +454,7 @@ async function runMatch(dwid, lat, lng) {
   const r = await matchTech(t);
   if (!$persistentStore.write(JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
     age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top }), "dw_blued_match"))
-    $console.log("dw_blued_match 写入失败");
+    log("dw_blued_match 写入失败");
   if (r.top.length) {
     $notification.post(title, sub,
       r.top.map(c => {
@@ -466,6 +469,7 @@ async function runMatch(dwid, lat, lng) {
   }
 }
 
+try {
 if (typeof $request !== "undefined" && $request.url) {
   const url = String($request.url);
   const headers = $request.headers || {};
@@ -478,10 +482,10 @@ if (typeof $request !== "undefined" && $request.url) {
     const lat = (url.match(/latitude=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/longitude=(-?[\d.]+)/) || [])[1];
     if (authEntry && authEntry[1] && lat && lng) {
-      if (!$persistentStore.write(String(authEntry[1]), AUTH_KEY)) $console.log("dw_blued_auth 写入失败");
-      if (!$persistentStore.write(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), GEO_KEY)) $console.log("dw_blued_geo 写入失败");
+      if (!$persistentStore.write(String(authEntry[1]), AUTH_KEY)) log("dw_blued_auth 写入失败");
+      if (!$persistentStore.write(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), GEO_KEY)) log("dw_blued_geo 写入失败");
     } else if (authEntry || (lat && lng)) {
-      $console.log("Blued 凭证缓存不完整, 未写入");
+      log("Blued 凭证缓存不完整, 未写入");
     }
     $done({});
   } else {
@@ -490,9 +494,9 @@ if (typeof $request !== "undefined" && $request.url) {
     const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
     if (m && lat && lng) {
-      $console.log("[到位×Blued] 主页触发 dwid=" + m[1]);
+      log("[到位×Blued] 主页触发 dwid=" + m[1]);
       if (!$persistentStore.write(JSON.stringify({ dwid: m[1], lat, lng, t: Date.now() }), PENDING_KEY))
-        $console.log("dw_blued_pending 写入失败");
+        log("dw_blued_pending 写入失败");
       kickWorker();
     }
     $done({});
@@ -500,19 +504,24 @@ if (typeof $request !== "undefined" && $request.url) {
 } else {
   // cron worker: 有待办 → 先清掉再跑 (重活在这里, 不占 App 请求路径)
   const task = readJSON(PENDING_KEY);
-  if (task && task.dwid) $console.log("[到位×Blued] worker 取到待办 dwid=" + task.dwid);
+  if (task && task.dwid) log("[到位×Blued] worker 取到待办 dwid=" + task.dwid);
   const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
   if (task && task.dwid && Date.now() - lastRun < 30000) return $done({});  // 30s 内已跑过, 防 kick/cron 双跑
   if (task && task.dwid) {
-    if (!$persistentStore.write(String(Date.now()), RUNNING_KEY)) $console.log("dw_blued_running 写入失败");
-    if (!$persistentStore.write("", PENDING_KEY)) $console.log("待办清理失败");
+    if (!$persistentStore.write(String(Date.now()), RUNNING_KEY)) log("dw_blued_running 写入失败");
+    if (!$persistentStore.write("", PENDING_KEY)) log("待办清理失败");
     runMatch(task.dwid, task.lat, task.lng)
       .catch(e => {
-        $console.log("FATAL: " + (e && e.stack || e));
+        log("FATAL: " + (e && e.stack || e));
         $notification.post("到位匹配没跑成", "", String(e && e.message || e));
       })
       .finally(() => $done({}));
   } else {
     $done({});
   }
+}
+} catch (e) {
+  log("FATAL: " + (e && e.stack || e));
+  try { $notification.post("到位匹配没跑成", "", String(e && e.message || e)); } catch (e2) {}
+  $done({});
 }
