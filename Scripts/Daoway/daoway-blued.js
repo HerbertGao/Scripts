@@ -428,7 +428,7 @@ function kickWorker() {
     body: JSON.stringify({ script_name: WORKER_NAME }),
     headers: { "X-Key": key, "Content-Type": "application/json" },
     policy: "DIRECT",
-  }, () => {});
+  }, (err, _resp) => log("[到位×Blued] kick " + (err ? "失败: " + err : "已发出(" + ((_resp && _resp.status) || "?") + ")")));
 }
 // 三个入口:
 //   A) 拦到 Blued App 的 /users 请求 → 缓存 authorization + 定位 (首次使用开一次附近的人即可)
