@@ -490,6 +490,7 @@ if (typeof $request !== "undefined" && $request.url) {
     const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
     if (m && lat && lng) {
+      $console.log("[到位×Blued] 主页触发 dwid=" + m[1]);
       if (!$persistentStore.write(JSON.stringify({ dwid: m[1], lat, lng, t: Date.now() }), PENDING_KEY))
         $console.log("dw_blued_pending 写入失败");
       kickWorker();
@@ -499,6 +500,7 @@ if (typeof $request !== "undefined" && $request.url) {
 } else {
   // cron worker: 有待办 → 先清掉再跑 (重活在这里, 不占 App 请求路径)
   const task = readJSON(PENDING_KEY);
+  if (task && task.dwid) $console.log("[到位×Blued] worker 取到待办 dwid=" + task.dwid);
   const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
   if (task && task.dwid && Date.now() - lastRun < 30000) return $done({});  // 30s 内已跑过, 防 kick/cron 双跑
   if (task && task.dwid) {
