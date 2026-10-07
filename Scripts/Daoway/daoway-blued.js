@@ -20,9 +20,9 @@ const BLUED = {
 //   dw_blued_auth = authorization 头(Basic uid:token)
 //   dw_blued_geo  = {lat,lng} App 请求里的定位
 const AUTH_KEY = "dw_blued_auth", GEO_KEY = "dw_blued_geo", RUNNING_KEY = "dw_blued_running";
-// 可选秒级推送: Surge 配置 [General] 开启 http-api = 密码@127.0.0.1:6171 后, 在此填 "密码@127.0.0.1:6171";
-// 不填则等 cron 兜底(≤1分钟)
-const HTTP_API = "";
+// 可选秒级推送: 模块参数 HTTP_API, 填 Surge [General] 里 http-api 的 "密码@127.0.0.1:6171"
+// (需先在配置 [General] 加 http-api = 密码@127.0.0.1:6171); 不填则等 cron 兜底(≤1分钟)
+const HTTP_API = (typeof $argument === "string" && $argument.trim()) ? $argument.trim() : "";
 const WORKER_NAME = "到位匹配任务";
 
 /* ============ 工具: base64 / bytes ============ */
