@@ -410,7 +410,7 @@ async function matchTech(t) {
     return {
       uid: u.uid, name: u.name, stars, avg: Math.round(avg * 10) / 10,
       age: u.age, height: u.height, weight: u.weight, distance: u.distance,
-      online: u.online_state,
+      online: u.online_state, avatar: u.avatar,
     };
   });
   // 只推高置信(3⭐); 一个都没有时放宽到 2⭐; 1⭐ 不推, 不凑数
@@ -465,6 +465,9 @@ async function runMatch(dwid, lat, lng) {
     age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top }), "dw_blued_match"))
     log("dw_blued_match 写入失败");
   if (r.top.length) {
+    const top = r.top[0];
+    // 置信度最高者的头像作为通知附件 (Surge 5.11+ media-url); 头像域名需能被系统拉到
+    const opts = top.avatar && top.avatar.startsWith("http") ? { "media-url": top.avatar } : undefined;
     $notification.post(title, sub,
       r.top.map(c => {
         const parts = [(c.name || "Blued " + c.uid) + "（uid " + c.uid + "）", "⭐".repeat(c.stars)];
@@ -472,7 +475,7 @@ async function runMatch(dwid, lat, lng) {
           c.distance != null && Number(c.distance) < 9999 && "离你" + Number(c.distance).toFixed(1) + "km",
           Number(c.online) === 1 && "在线"].filter(Boolean).join(" ");
         return parts.join(" ") + "\n    " + body;
-      }).join("\n"));
+      }).join("\n"), opts);
   } else {
     $notification.post(title, sub, "Blued 附近没找到接近的人，先不推了");
   }
