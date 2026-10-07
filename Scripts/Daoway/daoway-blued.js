@@ -26,7 +26,7 @@ const HTTP_API = (typeof $argument === "string" && /HTTP_API="([^"]*)"/.test($ar
 const WORKER_NAME = "到位匹配任务";
 
 /* 日志: $console 不保证存在, 退回 console 并静默兜底 */
-function log(msg) { try { ($console || console).log(msg); } catch (e) {} }
+function log(msg) { try { ($console || console).log(msg); } catch { /* 日志失败不致命 */ } }
 
 /* ============ 工具: base64 / bytes ============ */
 const B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -325,9 +325,10 @@ function dwGet(path, params) {
         const j = JSON.parse(data);
         if (j && String(j.encrypt) === "1" && j.publickey) {
           const root = JSON.parse(utf8Decode(aesGcmDecrypt(dwAesKey(), b64decode(j.data))));
-          if (!root || root.status !== "success" || !root.data) throw new Error("到位返回异常: " + JSON.stringify(root).slice(0, 200));
+          // by_buyer 解密根对象只有 data, 无 status 字段; 错误响应({msg,code,status})必无 data
+          if (!root || !root.data) throw new Error("到位返回异常: " + JSON.stringify(root).slice(0, 200));
           resolve(root);
-        } else if (j && j.status === "success" && j.data) {
+        } else if (j && j.data) {  // 非加密响应: 有 data 即成功, 错误响应({msg,code,status})必无 data
           resolve(j);
         } else {
           reject(new Error("到位返回异常: " + String(data).slice(0, 200)));
@@ -522,6 +523,6 @@ if (typeof $request !== "undefined" && $request.url) {
 }
 } catch (e) {
   log("FATAL: " + (e && e.stack || e));
-  try { $notification.post("到位匹配没跑成", "", String(e && e.message || e)); } catch (e2) {}
+  try { $notification.post("到位匹配没跑成", "", String(e && e.message || e)); } catch { /* 通知失败不致命 */ }
   $done({});
 }
