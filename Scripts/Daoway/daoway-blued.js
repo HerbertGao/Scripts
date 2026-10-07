@@ -466,8 +466,10 @@ async function runMatch(dwid, lat, lng) {
     log("dw_blued_match 写入失败");
   if (r.top.length) {
     const top = r.top[0];
-    // 置信度最高者的头像作为通知附件 (Surge 5.11+ media-url); 头像域名需能被系统拉到
-    const opts = top.avatar && top.avatar.startsWith("http") ? { "media-url": top.avatar } : undefined;
+    // 通知点击 → Blued App 内该人主页 (bluedlite://profile 经 iPhone 实测可用); 置信度最高者的头像作为附件 (Surge 5.11+ media-url)
+    const opts = {};
+    opts["open-url"] = "bluedlite://profile?uid=" + top.uid;
+    if (top.avatar && top.avatar.startsWith("http")) opts["media-url"] = top.avatar;
     $notification.post(title, sub,
       r.top.map(c => {
         const parts = [(c.name || "Blued " + c.uid) + "（uid " + c.uid + "）", "⭐".repeat(c.stars)];

@@ -10,10 +10,10 @@ URL-REGEX,^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buye
 URL-REGEX,^https:\/\/social\.irisgw\.cn\/users\?,DIRECT
 
 [Script]
-到位坐标缓存 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=10, script-update-interval=86400, argument=HTTP_API="{{{HTTP_API}}}"
-到位点击触发 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/\d+\/click(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=10, script-update-interval=86400, argument=HTTP_API="{{{HTTP_API}}}"
-Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=10, script-update-interval=86400
-到位匹配任务 = type=cron, cronexp=* * * * *, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=10, script-update-interval=86400, timeout=300
+到位坐标缓存 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=11, script-update-interval=86400, argument=HTTP_API="{{{HTTP_API}}}"
+到位点击触发 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/\d+\/click(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=11, script-update-interval=86400, argument=HTTP_API="{{{HTTP_API}}}"
+Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, requires-body=0, max-size=0, debug=0, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=11, script-update-interval=86400
+到位匹配任务 = type=cron, cronexp=* * * * *, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=11, script-update-interval=86400, timeout=300
 
 [MITM]
 hostname = %APPEND% api.daoway.cn,social.irisgw.cn
