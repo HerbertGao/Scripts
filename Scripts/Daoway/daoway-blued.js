@@ -35,7 +35,7 @@ const HTTP_API_ADDRS = ["127.0.0.1:6171", "127.0.0.1:6170"];
 const WORKER_NAME = "到位匹配任务";
 
 /* 日志: $console 不保证存在, 退回 console 并静默兜底 */
-function log(msg) { try { ($console || console).log(msg); } catch { /* 日志失败不致命 */ } }
+function log(msg) { $.log(msg); }  // Env: console 打印 + 会话日志聚合
 
 /* ============ 工具: base64 / bytes ============ */
 const B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -293,10 +293,10 @@ function dwAesKey() {
   return hkdfDaoway(bigTo32(r.x));
 }
 function getClientPriv() {
-  let hex = $persistentStore.read("dw_priv");
+  let hex = $.getdata("dw_priv");
   if (!hex) {
     hex = ""; for (let i = 0; i < 32; i++) hex += Math.floor(Math.random() * 256).toString(16).padStart(2, "0");
-    $persistentStore.write(hex, "dw_priv");
+    $.setdata(hex, "dw_priv");
   }
   return BigInt("0x" + hex);
 }
@@ -321,7 +321,7 @@ function dwGet(path, params) {
     const ts = String(Date.now());
     const sig = dwSign(params, ts);
     const q = Object.keys(params).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(String(params[k]))).join("&");
-    $httpClient.get({
+    $.get({
       url: DW.api + path + "?" + q,
       headers: {
         "user-agent": "DWBI/7.1.7 (iPhone; iOS 27.0.1)", accept: "*/*",
@@ -350,10 +350,10 @@ function dwGet(path, params) {
 /* ============ Blued 客户端 ============ */
 function parseNum(v) { const m = String(v ?? "").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; }
 function readJSON(key) {
-  try { return JSON.parse($persistentStore.read(key)); } catch { return null; }
+  try { return JSON.parse($.getdata(key)); } catch { return null; }
 }
 function bluedNearby(filters) {
-  const auth = $persistentStore.read(AUTH_KEY);
+  const auth = $.getdata(AUTH_KEY);
   const geo = readJSON(GEO_KEY);
   if (!auth || !geo) return Promise.reject(new Error(!auth ? "还没有 Blued 凭证：先用 Blued App 打开一次附近的人（保持 Surge 开着）" : "还没有 Blued 定位：同上，打开一次附近的人即可"));
   return new Promise((resolve, reject) => {
@@ -363,7 +363,7 @@ function bluedNearby(filters) {
       platform: "iOS", platform_version: "27.0.1", version: "7.50.3", version_code: "750030",
       wx: "1", wx_sdk: "2.0.4",
     };
-    $httpClient.get({
+    $.get({
       url: BLUED.social + "/users?" + Object.keys(q).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(String(q[k]))).join("&"),
       headers: { authorization: auth, accept: "*/*", "x-dwblued": "1", "user-agent": "Blued/7.50.3 (iPhone; iOS 27.0.1)" },
     }, (err, _resp, data) => {
@@ -384,16 +384,17 @@ function bluedNearby(filters) {
 
 // uid → 6位encryptId(服务端换发, 确定性映射): create 口令 → 从口令文本抠 ##码## → query 换回 link 里的 uid=
 function bluedEncUid(uid) {
-  const auth = $persistentStore.read(AUTH_KEY);
+  const auth = $.getdata(AUTH_KEY);
   if (!auth) return Promise.reject(new Error("还没有 Blued 凭证: 先用 Blued App 打开一次附近的人"));
-  const hd = { authorization: auth, "x-dwblued": "1" };
-  return new Promise((resolve, reject) => $httpClient.post({
+  // $.post 对带 body 的请求默认补 x-www-form-urlencoded, JSON 接口须显式声明 content-type
+  const hd = { authorization: auth, "content-type": "application/json", "x-dwblued": "1" };
+  return new Promise((resolve, reject) => $.post({
     url: BLUED.live + "/live/interact/api/token/create",
     headers: hd, body: JSON.stringify({ uid: Number(uid), source: "profile" }),
   }, (err, _r, data) => err ? reject(new Error("口令创建失败: " + err)) : resolve(data))).then(text => {
     const code = (String(text).match(/##([A-Za-z0-9]+)##/) || [])[1];
     if (!code) throw new Error("口令创建无码: " + String(text).slice(0, 100));
-    return new Promise((resolve, reject) => $httpClient.get({
+    return new Promise((resolve, reject) => $.get({
       url: BLUED.live + "/live/interact/api/token/query?code=" + code,
       headers: hd,
     }, (err, _r, data) => err ? reject(new Error("口令查询失败: " + err)) : resolve(data)));
@@ -456,7 +457,7 @@ function kickWorker() {
   const [key, addrOverride] = HTTP_API.split("@");
   const addrs = addrOverride ? [addrOverride] : HTTP_API_ADDRS;
   for (const addr of addrs) {
-    $httpClient.post({
+    $.post({
       url: "http://" + addr + "/v1/scripting/cron/evaluate",
       body: JSON.stringify({ script_name: WORKER_NAME }),
       headers: { "X-Key": key, "Content-Type": "application/json" },
@@ -491,7 +492,7 @@ async function runMatch(dwid, lat, lng) {
     return;
   }
   const r = await matchTech(t);
-  if (!$persistentStore.write(JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
+  if (!$.setdata(JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
     age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top }), "dw_blued_match"))
     log("dw_blued_match 写入失败");
   if (r.top.length) {
@@ -531,26 +532,26 @@ if (typeof $request !== "undefined" && $request.url) {
   // 脚本自身发起的请求会再命中拦截 pattern → 靠标记头键名防递归
   const selfReq = Object.keys(headers).some(k => String(k).toLowerCase() === "x-dwblued");
   if (selfReq) {
-    $done({});
+    $.done({});
   } else if (/social\.irisgw\.cn\/users(?:\?|$)/.test(url)) {
     const authEntry = Object.entries(headers).find(([k]) => String(k).toLowerCase() === "authorization");
     const lat = (url.match(/latitude=(-?[\d.]+)/) || [])[1];
     const lng = (url.match(/longitude=(-?[\d.]+)/) || [])[1];
     if (authEntry && authEntry[1] && lat && lng) {
-      if (!$persistentStore.write(String(authEntry[1]), AUTH_KEY)) log("dw_blued_auth 写入失败");
-      if (!$persistentStore.write(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), GEO_KEY)) log("dw_blued_geo 写入失败");
+      if (!$.setdata(String(authEntry[1]), AUTH_KEY)) log("dw_blued_auth 写入失败");
+      if (!$.setdata(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), GEO_KEY)) log("dw_blued_geo 写入失败");
     } else if (authEntry || (lat && lng)) {
       log("Blued 凭证缓存不完整, 未写入");
     }
-    $done({});
+    $.done({});
   } else {
     // B) by_buyer(预取+点开都发): 只更新最新坐标
     if (/technician\/v2\/\d+\/by_buyer/.test(url)) {
       const lat = (url.match(/lat=(-?[\d.]+)/) || [])[1];
       const lng = (url.match(/lng=(-?[\d.]+)/) || [])[1];
-      if (lat && lng && !$persistentStore.write(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), DW_GEO_KEY))
+      if (lat && lng && !$.setdata(JSON.stringify({ lat: Number(lat), lng: Number(lng) }), DW_GEO_KEY))
         log("dw_dw_geo 写入失败");
-      return $done({});
+      return $.done({});
     }
     // C) click 埋点 = 用户点开了这位 (确定性)
     const mc = url.match(/technician\/(\d+)\/click/);
@@ -560,46 +561,46 @@ if (typeof $request !== "undefined" && $request.url) {
         log("[到位×Blued] 点击技师 dwid=" + mc[1]);
         const q = (readJSON(QUEUE_KEY) || []).filter(x => x.dwid !== mc[1]);
         q.push({ dwid: mc[1], lat: geo.lat, lng: geo.lng });
-        if (!$persistentStore.write(JSON.stringify(q.slice(-QUEUE_CAP)), QUEUE_KEY)) log("dw_click_queue 写入失败");
-        const lastKick = Number($persistentStore.read(KICK_TS_KEY)) || 0;
+        if (!$.setdata(JSON.stringify(q.slice(-QUEUE_CAP)), QUEUE_KEY)) log("dw_click_queue 写入失败");
+        const lastKick = Number($.getdata(KICK_TS_KEY)) || 0;
         if (Date.now() - lastKick >= 3000) {
-          if (!$persistentStore.write(String(Date.now()), KICK_TS_KEY)) log("dw_kick_ts 写入失败");
+          if (!$.setdata(String(Date.now()), KICK_TS_KEY)) log("dw_kick_ts 写入失败");
           kickWorker();
         }
       } else log("[到位×Blued] 无到位坐标(尚未被 by_buyer 缓存), 跳过");
     }
-    $done({});
+    $.done({});
   }
 } else {
   // worker: 排空点击队列逐个匹配推送; 处理期间新到点击由循环尾部重读接住
   // kick 双地址双发时, 第二个 worker 见 RUNNING 新鲜即退出, 由活跃 worker 的循环兜住
   const now0 = Date.now();
-  const lastRun = Number($persistentStore.read(RUNNING_KEY)) || 0;
-  if (now0 - lastRun < 10000 && lastRun > 0) return $done({});  // 已有活跃 worker
-  if (!$persistentStore.write(String(now0), RUNNING_KEY)) log("dw_blued_running 写入失败");
+  const lastRun = Number($.getdata(RUNNING_KEY)) || 0;
+  if (now0 - lastRun < 10000 && lastRun > 0) return $.done({});  // 已有活跃 worker
+  if (!$.setdata(String(now0), RUNNING_KEY)) log("dw_blued_running 写入失败");
   (async () => {
     for (;;) {
       const queue = readJSON(QUEUE_KEY) || [];
       if (!Array.isArray(queue) || !queue.length) break;
-      if (!$persistentStore.write("", QUEUE_KEY)) log("队列清理失败");
+      if (!$.setdata("", QUEUE_KEY)) log("队列清理失败");
       for (const item of queue) {
         // 幂等: 同 dwid 10s 内已推过则跳过
         const pushed = readJSON(PUSHED_KEY);
         if (pushed && pushed.dwid === item.dwid && Date.now() - pushed.t < 10000) continue;
-        if (!$persistentStore.write(JSON.stringify({ dwid: item.dwid, t: Date.now() }), PUSHED_KEY)) log("dw_pushed 写入失败");
+        if (!$.setdata(JSON.stringify({ dwid: item.dwid, t: Date.now() }), PUSHED_KEY)) log("dw_pushed 写入失败");
         try { await runMatch(item.dwid, item.lat, item.lng); }
         catch (e) {
-          log("FATAL: " + (e && e.stack || e));
+          $.logErr(e, "FATAL");
           $.msg("到位匹配没跑成", "", String(e && e.message || e));
         }
       }
     }
-    if (!$persistentStore.write("", RUNNING_KEY)) log("dw_blued_running 清理失败");
-    $done({});
+    if (!$.setdata("", RUNNING_KEY)) log("dw_blued_running 清理失败");
+    $.done({});
   })();
 }
 } catch (e) {
-  log("FATAL: " + (e && e.stack || e));
+  $.logErr(e, "FATAL");
   try { $.msg("到位匹配没跑成", "", String(e && e.message || e)); } catch { /* .msg 失败不致命*/ }
-  $done({});
+  $.done({});
 }
