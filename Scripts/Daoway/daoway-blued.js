@@ -499,13 +499,18 @@ async function runMatch(dwid, lat, lng) {
     const top = r.top[0];
     // 通知点击 → Blued App 内该人主页; 置信度最高者的头像作为附件 (Surge 5.11+ media-url)
     // encryptId 需服务端换发: 决定推某人时才调 create+query 拿 6位短码, H5 免登录页经
-    // AASA universal link 会自动拉起 Blued App 打开该人主页; 失败则无跳转, 只弹普通通知
+    // open-url 走 AASA universal link (app.blued.cn domain); 参数集用 Blued X 原生分享格式
+    // 实测: app=1 会弹到已下架旧版, app=7 正确弹到 Blued X
     const opts = {};
     let deepLink = "";
     try {
       const enc = await bluedEncUid(top.uid);
       // Env 语法: url 字段由 $.msg 负责按平台适配成 Surge {action:'open-url', url}/Loon openUrl/QX open-url
-      opts["url"] = "https://app.blued.cn/user?id=" + enc;
+      // 参数集照 Blued X App 内原生分享链接 (app=7 是 Blued X 的 appid, 用户实测 app=1 会弹到已下架旧版)
+      opts["url"] = "https://app.blued.cn/user?id=" + enc
+        + "&uid=" + enc
+        + "&type=within&platform=wechat&page=social&encryptId=" + enc
+        + "&app=7&af_adset=wechat&shareto=wechat&action=profile&enc=1";
       deepLink = "\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)";
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     // 诊断: 把通知跳转字段记入 Surge→Scripts→日志, 点通知不跳时先看这里有没有 url
