@@ -498,17 +498,18 @@ async function runMatch(dwid, lat, lng) {
   if (r.top.length) {
     const top = r.top[0];
     // 通知点击 → Blued App 内该人主页; 置信度最高者的头像作为附件 (Surge 5.11+ media-url)
-    // encryptId 需服务端换发: 决定推某人时才调 create+query 拿 6位短码, H5 免登录页经
-    // open-url 走 AASA universal link (app.blued.cn domain); 参数集用 Blued X 原生分享格式
-    // 实测: app=1 会弹到已下架旧版, app=7 正确弹到 Blued X
+    // encryptId 仍由 create+query 换发; 跳转改用 Blued X 的 OpenInstall Universal Link
+    // 用户实测精简 payload 可经 Safari 直达主页; 网页兜底可能显示“链接已过期”
     const opts = {};
     let deepLink = "";
     try {
       const enc = await bluedEncUid(top.uid);
       // Env 语法: url 字段由 $.msg 负责按平台适配成 Surge {action:'open-url', url}/Loon openUrl/QX open-url
-      // 用户实测最小可用集: app=7 (Blued X appid) 是拉起 Blued X 而非已下架旧版的关鍵
-      opts["url"] = "https://app.blued.cn/user?id=" + enc
-        + "&uid=" + enc + "&action=profile&app=7&enc=1";
+      const payload = JSON.stringify({ d: {
+        tr_param1: "https://common.blued.cn/?action=profile-enc=1-uid=" + enc,
+      } });
+      opts["url"] = "https://nk5oy5.oplinking.com/ulink/c/"
+        + b64encode(utf8Encode(payload)).replace(/\+/g, "-").replace(/\//g, "_");
       deepLink = "\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)";
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     // 诊断: 把通知跳转字段记入 Surge→Scripts→日志, 点通知不跳时先看这里有没有 url
