@@ -506,11 +506,9 @@ async function runMatch(dwid, lat, lng) {
     try {
       const enc = await bluedEncUid(top.uid);
       // Env 语法: url 字段由 $.msg 负责按平台适配成 Surge {action:'open-url', url}/Loon openUrl/QX open-url
-      // 参数集照 Blued X App 内原生分享链接 (app=7 是 Blued X 的 appid, 用户实测 app=1 会弹到已下架旧版)
+      // 用户实测最小可用集: app=7 (Blued X appid) 是拉起 Blued X 而非已下架旧版的关鍵
       opts["url"] = "https://app.blued.cn/user?id=" + enc
-        + "&uid=" + enc
-        + "&type=within&platform=wechat&page=social&encryptId=" + enc
-        + "&app=7&af_adset=wechat&shareto=wechat&action=profile&enc=1";
+        + "&uid=" + enc + "&action=profile&app=7&enc=1";
       deepLink = "\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)";
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     // 诊断: 把通知跳转字段记入 Surge→Scripts→日志, 点通知不跳时先看这里有没有 url
