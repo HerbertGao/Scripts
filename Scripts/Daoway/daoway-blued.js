@@ -14,8 +14,11 @@ const DW = {
 };
 const BLUED = {
   social: "https://social.irisgw.cn",
+  live: "https://live.irisgw.cn",
   tags: "3_6",
 };
+// encryptId 是服务端生成的(定性复现): ① POST token/create 口令 → ② GET token/query 抠 cuuid=短码
+// 二分试验结论: 这两个接口只需 authorization 一个头即可, 其余/签名时效均不校验(curl/bin 自证)
 // 凭证/坐标不硬编码: 拦截 Blued App 自身请求时缓存
 //   dw_blued_auth = authorization 头(Basic uid:token)
 //   dw_blued_geo  = {lat,lng} App 请求里的定位
@@ -374,6 +377,28 @@ function bluedNearby(filters) {
   });
 }
 
+// uid → 6位encryptId(服务端换发, 确定性映射): create 口令 → 从口令文本抠 ##码## → query 换回 link 里的 uid=
+function bluedEncUid(uid) {
+  const auth = $persistentStore.read(AUTH_KEY);
+  if (!auth) return Promise.reject(new Error("还没有 Blued 凭证: 先用 Blued App 打开一次附近的人"));
+  const hd = { authorization: auth, "x-dwblued": "1" };
+  return new Promise((resolve, reject) => $httpClient.post({
+    url: BLUED.live + "/live/interact/api/token/create",
+    headers: hd, body: JSON.stringify({ uid: Number(uid), source: "profile" }),
+  }, (err, _r, data) => err ? reject(new Error("口令创建失败: " + err)) : resolve(data))).then(text => {
+    const code = (String(text).match(/##([A-Za-z0-9]+)##/) || [])[1];
+    if (!code) throw new Error("口令创建无码: " + String(text).slice(0, 100));
+    return new Promise((resolve, reject) => $httpClient.get({
+      url: BLUED.live + "/live/interact/api/token/query?code=" + code,
+      headers: hd,
+    }, (err, _r, data) => err ? reject(new Error("口令查询失败: " + err)) : resolve(data)));
+  }).then(text => {
+    const m = String(text).match(/uid=([A-Za-z0-9]+)/);
+    if (!m) throw new Error("口令查询无短码: " + String(text).slice(0, 100));
+    return m[1];
+  });
+}
+
 /* ============ 匹配 ============ */
 
 /**
@@ -466,9 +491,14 @@ async function runMatch(dwid, lat, lng) {
     log("dw_blued_match 写入失败");
   if (r.top.length) {
     const top = r.top[0];
-    // 通知点击 → Blued App 内该人主页 (bluedlite://profile 经 iPhone 实测可用); 置信度最高者的头像作为附件 (Surge 5.11+ media-url)
+    // 通知点击 → Blued App 内该人主页; 置信度最高者的头像作为附件 (Surge 5.11+ media-url)
+    // encryptId 需服务端换发: 决定推某人时才调 create+query 拿 6位短码, H5 免登录页经
+    // AASA universal link 会自动拉起 Blued App 打开该人主页; 失败则无跳转, 只弹普通通知
     const opts = {};
-    opts["open-url"] = "bluedlite://profile?uid=" + top.uid;
+    try {
+      const enc = await bluedEncUid(top.uid);
+      opts["open-url"] = "https://app.blued.cn/user?id=" + enc + "&enc=1";
+    } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     if (top.avatar && top.avatar.startsWith("http")) opts["media-url"] = top.avatar;
     $notification.post(title, sub,
       r.top.map(c => {
