@@ -126,7 +126,7 @@ function hkdfDaoway(ikm, length = 32) {
 }
 
 /* ============ AES-256 (仅需加密方向, GCM 用) ============ */
-const SBOX = new Uint8Array(256), INV_SBOX = new Uint8Array(256);
+const SBOX = new Uint8Array(256);
 (function () {
   const exp = new Uint8Array(256), log = new Uint8Array(256);
   let x = 1;
@@ -136,7 +136,6 @@ const SBOX = new Uint8Array(256), INV_SBOX = new Uint8Array(256);
     const rot = (v, n) => ((v << n) | (v >>> (8 - n))) & 0xff;
     SBOX[i] = (inv ^ rot(inv, 1) ^ rot(inv, 2) ^ rot(inv, 3) ^ rot(inv, 4) ^ 0x63) & 0xff;
   }
-  for (let i = 0; i < 256; i++) INV_SBOX[SBOX[i]] = i;
 })();
 function xtime(a) { return ((a << 1) ^ ((a & 0x80) ? 0x1b : 0)) & 0xff; }
 function gmul(a, b) { let r = 0; while (b) { if (b & 1) r ^= a; a = xtime(a); b >>= 1; } return r & 0xff; }
@@ -284,11 +283,7 @@ function dwPubB64() {
   return b64encode(concat(head, Uint8Array.of(4), bigTo32(pub.x), bigTo32(pub.y)));
 }
 function dwAesKey() {
-  const priv = getClientPriv();
-  const srv = parseServerPoint(DW.serverPubB64);
-  // shared = priv * serverPub
-  let r = null, base = srv, k = priv;
-  while (k > 0n) { if (k & 1n) r = ecAdd(r, base); base = ecDouble(base); k >>= 1n; }
+  const r = ecMul(getClientPriv(), parseServerPoint(DW.serverPubB64));
   // Java keyAgreement.generateSecret() 返回 X 坐标 32 字节
   return hkdfDaoway(bigTo32(r.x));
 }
@@ -512,9 +507,6 @@ async function runMatch(dwid, lat, lng) {
         + b64encode(utf8Encode(payload)).replace(/\+/g, "-").replace(/\//g, "_");
       deepLink = "\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)";
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
-    // 诊断: 把通知跳转字段记入 Surge→Scripts→日志, 点通知不跳时先看这里有没有 url
-    // ponytail: 诊断日志; 跳转稳定后可删
-    log("[到位×Blued] 通知 opts=" + JSON.stringify(opts) + " top.uid=" + top.uid);
     if (top.avatar && top.avatar.startsWith("http")) opts["media-url"] = top.avatar;
     $.msg(title, sub,
       r.top.map(c => {
