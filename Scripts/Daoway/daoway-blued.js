@@ -497,7 +497,9 @@ async function runMatch(dwid, lat, lng) {
     const opts = {};
     try {
       const enc = await bluedEncUid(top.uid);
-      opts["open-url"] = "https://app.blued.cn/user?id=" + enc + "&enc=1";
+      // Surge 通知跳转的正确形态是 {action:'open-url', url:...}, 见 Env.js Surge 分支适配
+      opts["action"] = "open-url";
+      opts["url"] = "https://app.blued.cn/user?id=" + enc;
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     if (top.avatar && top.avatar.startsWith("http")) opts["media-url"] = top.avatar;
     $notification.post(title, sub,
