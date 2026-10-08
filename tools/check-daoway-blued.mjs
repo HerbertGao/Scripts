@@ -18,7 +18,7 @@ vm.createContext(sandbox);
 const source = fs.readFileSync(new URL("../Scripts/Daoway/daoway-blued.js", import.meta.url), "utf8");
 const entry = source.indexOf("\ntry {\nif (typeof $request");
 assert.ok(entry > 0, "定位脚本入口，避免执行网络请求和 worker");
-vm.runInContext(source.slice(0, entry), sandbox);
+vm.runInContext(source.slice(0, entry).replace("\nfunction main() {\n", "\n"), sandbox);
 const ecdh = createECDH("prime256v1");
 ecdh.setPrivateKey(Buffer.from(privateKey, "hex"));
 const serverPoint = Buffer.from(vm.runInContext("DW.serverPubB64", sandbox), "base64").subarray(-65);
@@ -85,7 +85,7 @@ for (const [label, t, u, stars, score] of ratingCases) {
   candidates = [{ ...user, ...u }];
   const { top } = await sandbox.matchTech({ ...tech, ...t }, geo);
   assert.equal(top[0]?.stars ?? 0, stars, label);
-  if (score != null) assert.equal(top[0]?.score, score, label + "：加权综合分");
+  if (score != null) assert.equal(top[0]?.score, score, `${label}：加权综合分`);
 }
 assert.equal(lastFilters.age, "21-27");
 assert.equal(lastFilters.height, "180-186");
@@ -130,7 +130,7 @@ for (const enc of ["PWWzq1", "Abc1234", "Abc12345"]) {
   await sandbox.runMatch("456", geo.lat, geo.lng);
   const opts = notifications.at(-1)[3];
   assert.equal(opts.action, "open-url");
-  const payload = { d: { tr_param1: "https://common.blued.cn/?action=profile-enc=1-uid=" + enc } };
+  const payload = { d: { tr_param1: `https://common.blued.cn/?action=profile-enc=1-uid=${enc}` } };
   const expected = Buffer.from(JSON.stringify(payload)).toString("base64")
     .replace(/\+/g, "-").replace(/\//g, "_");
   assert.equal(opts.url, prefix + expected);
@@ -148,4 +148,67 @@ assert.equal(notifications.at(-1)[3].url, undefined);
 sandbox.matchTech = async () => ({ top: [] });
 await sandbox.runMatch("456", geo.lat, geo.lng);
 assert.equal(notifications.at(-1)[2], "没找到匹配的人");
-console.log("ok: " + ratingCases.length + "个评星用例、综合排序、统一查询坐标、ECDH/HKDF 派生、通知格式和跳转、换发失败处理");
+// 回归: HTTP API 必填、按需代码可独立运行, 快速完成后再次点击不会被节流漏唤醒。
+const state = { ...stored, dw_dw_geo: JSON.stringify(geo) };
+const apiRequests = [], backgroundNotifications = [];
+function execute(code, request, argument) {
+  let finish;
+  const done = new Promise(resolve => { finish = resolve; });
+  let completed = false;
+  vm.runInNewContext(code, {
+    console: { log() {} },
+    $environment: { "surge-version": "5.11" },
+    $request: request, $argument: argument,
+    $persistentStore: { read: key => state[key] ?? null, write(value, key) { state[key] = value; return true; } },
+    $notification: { post: (...args) => backgroundNotifications.push(args) },
+    $httpClient: {
+      get({ url }, callback) {
+        let data;
+        if (url.startsWith("https://api.daoway.cn/daoway/rest/technician/v2/"))
+          data = JSON.stringify({ data: { name: "测试技师", age: 24, height: 183, weight: 88, distance: 10 } });
+        else if (url.startsWith("https://social.irisgw.cn/users?")) data = JSON.stringify({ data: [user] });
+        else if (url.startsWith("https://live.irisgw.cn/live/interact/api/token/query?")) data = "uid=Abc123";
+        else assert.fail(`不应额外下载 worker: ${url}`);
+        callback(null, { status: 200 }, data);
+      },
+      post(req, callback) {
+        if (req.url.startsWith("http://127.0.0.1:")) apiRequests.push(req); // 不回调: 点击仍须立即放行。
+        else {
+          assert.equal(req.url, "https://live.irisgw.cn/live/interact/api/token/create");
+          callback(null, { status: 200 }, "##testCode##");
+        }
+      },
+    },
+    $done() { completed = true; finish(); },
+  });
+  return { done, get completed() { return completed; } };
+}
+const click = id => ({ url: `https://api.daoway.cn/daoway/rest/technician/${id}/click`, headers: {} });
+await execute(source, click("999"), 'HTTP_API=""').done;
+assert.match(backgroundNotifications.pop()[2], /必填参数 HTTP_API/);
+assert.equal(apiRequests.length, 0, "缺必填参数不提交任务");
+assert.equal(state.dw_click_queue, undefined, "缺必填参数不积压待办");
+for (const id of ["456", "457"]) {
+  const hook = execute(source, click(id), 'HTTP_API="test-only"');
+  assert.equal(hook.completed, true, "不等待后台匹配或 HTTP API 回调");
+  assert.equal(apiRequests.length, Number(id) - 455, "每次点击都唤醒, 无3秒节流");
+  const req = apiRequests.at(-1);
+  assert.equal(req.url, "http://127.0.0.1:6171/v1/scripting/evaluate");
+  assert.equal(req.headers["X-Key"], "test-only");
+  let payload;
+  try { payload = JSON.parse(req.body); }
+  catch (err) { assert.fail(`HTTP API 请求体不是 JSON: ${err.message}`); }
+  assert.equal(payload.mock_type, "cron");
+  assert.equal(payload.timeout, 300);
+  assert.equal(payload.script_text.includes("test-only"), false, "提交的代码不夹带 API 密码");
+  await execute(payload.script_text).done;
+  assert.equal(state.dw_click_queue, "");
+  assert.equal(state.dw_blued_running, "");
+}
+assert.equal(backgroundNotifications.length, 2, "两个点击各完成一次独立后台匹配");
+execute(source, click("458"), 'HTTP_API="test-only@127.0.0.1:6170"');
+assert.equal(apiRequests.at(-1).url, "http://127.0.0.1:6170/v1/scripting/evaluate");
+assert.equal(state.dw_kick_ts, undefined, "不再写入唤醒节流状态");
+const module = fs.readFileSync(new URL("../Surge/daoway-blued.module", import.meta.url), "utf8");
+assert.doesNotMatch(module, /type=cron|cronexp=/, "模块不注册定时任务");
+console.log(`ok: ${ratingCases.length}个评星用例、综合排序、统一查询坐标、ECDH/HKDF 派生、通知和跳转、HTTP API 按需后台执行与必填校验、快速点击不漏唤醒、无 Cron`);

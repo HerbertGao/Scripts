@@ -1,19 +1,18 @@
 #!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/daoway-blued.module
 #!name= 到位×Blued 匹配
-#!desc= 打开到位技师主页时，自动在 Blued 附近的人里找年龄身高体重接近的账号并推送。首次使用：先打开一次 Blued 附近的人（缓存凭证和定位）。需开启 MITM。匹配在后台完成，不阻塞到位 App。可选秒级推送：配置 [General] 加 http-api = 密码@127.0.0.1:6171，再到模块参数里填同一值。
+#!desc= 打开到位技师主页，后台匹配 Blued 附近的人并推送。需开启 MITM 和 Surge HTTP API、填写模块参数，并先打开一次 Blued 附近的人。
 #!category=HerbertGao's Scripts
 #!arguments = HTTP_API:""
-#!arguments-desc = HTTP_API: [推送方式] Surge HTTP API 密码\n    ├ 留空: 用 cron 兜底, 打开主页后 1 分钟内推送\n    └ 填写: 秒级推送, 值为 Surge 里 http-api 的密码（只填密码即可，端口自动尝试 6171/6170）\n需先在 Surge 的 HTTP API 设置里开启并设置密码（或配置 [General] 加 http-api = 密码@127.0.0.1:6171）。密码不要含逗号引号。
+#!arguments-desc = HTTP_API: 必填，填 Surge HTTP API 密码，默认端口 6171；其他端口填 密码@127.0.0.1:端口。密码勿含 @、逗号或引号。
 
 [Rule]
 URL-REGEX,^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer,DIRECT
 URL-REGEX,^https:\/\/social\.irisgw\.cn\/users\?,DIRECT
 
 [Script]
-到位坐标缓存 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=22, argument=HTTP_API="{{{HTTP_API}}}"
-到位点击触发 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/\d+\/click(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=22, argument=HTTP_API="{{{HTTP_API}}}"
-Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=22
-到位匹配任务 = type=cron, cronexp=* * * * *, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=22, timeout=300
+到位坐标缓存 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/v2\/\d+\/by_buyer(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=23
+到位点击触发 = type=http-request, pattern=^https:\/\/api\.daoway\.cn\/daoway\/rest\/technician\/\d+\/click(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=23, argument=HTTP_API="{{{HTTP_API}}}"
+Blued凭证缓存 = type=http-request, pattern=^https:\/\/social\.irisgw\.cn\/users(?:\?.*)?$, script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Daoway/daoway-blued.js?v=23
 
 [MITM]
 hostname = %APPEND% api.daoway.cn,social.irisgw.cn
