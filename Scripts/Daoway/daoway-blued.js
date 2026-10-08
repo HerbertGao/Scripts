@@ -344,13 +344,18 @@ function dwGet(path, params) {
 
 /* ============ Blued 客户端 ============ */
 function parseNum(v) { const m = String(v ?? "").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; }
+function parseDistance(v) {
+  const n = typeof v === "number" || (typeof v === "string" && v.trim()) ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 && n < 9999 ? n : null;
+}
 function readJSON(key) {
   try { return JSON.parse($.getdata(key)); } catch { return null; }
 }
-function bluedNearby(filters) {
+function bluedNearby(filters, geo) {
   const auth = $.getdata(AUTH_KEY);
-  const geo = readJSON(GEO_KEY);
-  if (!auth || !geo) return Promise.reject(new Error(!auth ? "还没有 Blued 凭证：先用 Blued App 打开一次附近的人（保持 Surge 开着）" : "还没有 Blued 定位：同上，打开一次附近的人即可"));
+  if (!auth) return Promise.reject(new Error("还没有 Blued 凭证：先用 Blued App 打开一次附近的人（保持 Surge 开着）"));
+  if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng) || Math.abs(geo.lat) > 90 || Math.abs(geo.lng) > 180)
+    return Promise.reject(new Error("没有有效的到位查询坐标，无法定位匹配"));
   return new Promise((resolve, reject) => {
     const q = {
       from: "list", latitude: geo.lat, longitude: geo.lng, limit: 60, start: 0,
@@ -405,43 +410,51 @@ function bluedEncUid(uid) {
 /**
  * 有什么查什么:
  *   - 技师缺某维度 → Blued filters 不带该维度, 打分也不计
- *   - 平均差 avgΔ (按实际可比维度归一)
- *   - 距离: 以技师到位距离为基准, 候选距离差越大置信越低;
- *     技师距离未知时距离不参与判定
- *   - 3⭐ 高置信, 2⭐ 次之, 低的不推; 不凑数
+ *   - 3⭐ 三项完整, 差值≤1岁/2cm/3kg, 距离差≤0.5km
+ *   - 2⭐ 至少两项可比且各差≤3, 距离差≤2km; 距离未知最多2⭐
+ *   - 同星先完整度和已知距离, 再综合归一化资料差与距离差; 1⭐ 不推
  */
-async function matchTech(t) {
+async function matchTech(t, geo) {
   const filters = {
     filter_album_open: 0, condition: true, filter_new_user: 0, instant_status: 0,
     tags: BLUED.tags, filter_register_time: "0-99", filter_real_switch: 0,
     time_span: "0-max", geo_reach: "0-max", filter_already_chatted: 0, online: 0,
   };
   const dims = [];
-  if (t.age) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age]); }
-  if (t.ht)  { filters.height = Math.max(140, t.ht - 3) + "-" + (t.ht + 3); dims.push(["height", t.ht]); }
-  if (t.wt)  { filters.weight = Math.max(40, t.wt - 3) + "-" + (t.wt + 3); dims.push(["weight", t.wt]); }
+  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 1]); }
+  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 3) + "-" + (t.ht + 3); dims.push(["height", t.ht, 2]); }
+  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 3) + "-" + (t.wt + 3); dims.push(["weight", t.wt, 3]); }
   if (!dims.length) return { top: [] };
-  const cands = await bluedNearby(filters);
+  const cands = await bluedNearby(filters, geo);
+  // ponytail: 原始 distance 沿用公里假设; 若接口单位核实为米, 换算后再评星。
+  const td = parseDistance(t.distance);
   const scored = cands.map(u => {
-    let score = 0, n = 0;
-    for (const [k, v] of dims) {
-      const uv = k === "age" ? parseInt(u.age) : u[k];
-      if (uv != null && v != null) { score += Math.abs(uv - v); n++; }
+    let sum = 0, normalized = 0, n = 0, strong = true, weak = true;
+    for (const [k, v, limit] of dims) {
+      const uv = k === "age" ? parseInt(u.age, 10) : Number(u[k]);
+      if (!Number.isFinite(uv) || uv <= 0) continue;
+      const diff = Math.abs(uv - v);
+      sum += diff; normalized += diff / limit; n++;
+      strong = strong && diff <= limit;
+      weak = weak && diff <= 3;
     }
-    const avg = n ? score / n : 99;
-    const dGap = u.distance == null ? null :
-      (t.distance == null ? null : Math.abs(Number(u.distance) - Number(t.distance)));
-    const stars = (avg <= 2 && (dGap == null || dGap <= 5)) ? 3 :
-                  (avg <= 5 && (dGap == null || dGap <= 15)) ? 2 : 1;
+    const avg = n ? sum / n : 99;
+    const bd = parseDistance(u.distance);
+    const dGap = td != null && bd != null ? Number(Math.abs(bd - td).toFixed(6)) : null;
+    const stars = n === 3 && strong && dGap != null && dGap <= 0.5 ? 3 :
+                  n >= 2 && weak && (dGap == null || dGap <= 2) ? 2 : 1;
     return {
       uid: u.uid, name: u.name, stars, avg: Math.round(avg * 10) / 10,
+      compared: n, dGap, error: normalized / (n || 1) + (dGap == null ? 0 : dGap / 0.5),
       age: u.age, height: u.height, weight: u.weight, distance: u.distance,
       online: u.online_state, avatar: u.avatar,
     };
   });
   // 只推高置信(3⭐); 一个都没有时放宽到 2⭐; 1⭐ 不推, 不凑数
-  let top = scored.filter(c => c.stars === 3).sort((a, b) => a.avg - b.avg).slice(0, 3);
-  if (!top.length) top = scored.filter(c => c.stars === 2).sort((a, b) => a.avg - b.avg).slice(0, 3);
+  const bestStars = scored.some(c => c.stars === 3) ? 3 : 2;
+  const top = scored.filter(c => c.stars === bestStars).sort((a, b) =>
+    b.compared - a.compared || Number(a.dGap == null) - Number(b.dGap == null) || a.error - b.error
+  ).slice(0, 3);
   return { top };
 }
 
@@ -478,7 +491,7 @@ async function runMatch(dwid, lat, lng) {
   } catch (e) { throw new Error("到位查询失败: " + (e && e.message || e)); }
   if (!detail) throw new Error("到位返回档案为空");
   const t = { age: parseInt(detail.age), ht: parseNum(detail.height), wt: parseNum(detail.weight),
-              distance: parseNum(detail.distance) };
+              distance: parseDistance(detail.distance) };
   const sub = [t.age && t.age + "岁", t.ht && t.ht + "cm", t.wt && t.wt + "kg", detail.constellation]
     .filter(Boolean).join("·");
   const title = (detail.name || "到位技师 " + dwid) + "（到位 " + (detail.distanceView ? detail.distanceView + "km" : "距离未知") + "）";
@@ -486,7 +499,7 @@ async function runMatch(dwid, lat, lng) {
     $.msg(title, sub || "", "这个技师没留年龄身高体重，Blued 上没法比，先不找了");
     return;
   }
-  const r = await matchTech(t);
+  const r = await matchTech(t, { lat, lng });
   if (!$.setdata(JSON.stringify({ tech: { dwid: Number(dwid), name: detail.name,
     age: t.age, height: t.ht, weight: t.wt, constellation: detail.constellation, distance: t.distance }, top: r.top }), "dw_blued_match"))
     log("dw_blued_match 写入失败");
