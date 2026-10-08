@@ -122,7 +122,7 @@ for (const enc of ["PWWzq1", "Abc1234", "Abc12345"]) {
   assert.equal(opts["media-url"], "https://example.com/avatar.jpg");
   assert.equal(notifications.at(-1)[0], "测试技师（到位 距离未知）");
   assert.equal(notifications.at(-1)[1], "24岁·183cm·88kg");
-  assert.equal(notifications.at(-1)[2], "测试用户（uid 123） ⭐⭐⭐\n    24岁 183cm 88kg 离你10.1km 在线\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)");
+  assert.equal(notifications.at(-1)[2], "测试用户（uid 123） ⭐⭐⭐\n    24岁 183cm 88kg 离你10.1km 在线");
 }
 
 detailDistance = "-1";
@@ -130,4 +130,7 @@ sandbox.bluedEncUid = async () => { throw new Error("换发失败"); };
 await sandbox.runMatch("456", geo.lat, geo.lng);
 assert.equal(notifications.length, 4);
 assert.equal(notifications.at(-1)[3].url, undefined);
+sandbox.matchTech = async () => ({ top: [] });
+await sandbox.runMatch("456", geo.lat, geo.lng);
+assert.equal(notifications.at(-1)[2], "没找到匹配的人");
 console.log("ok: " + ratingCases.length + "个评星用例、综合排序、统一查询坐标、ECDH/HKDF 派生、通知格式和跳转、换发失败处理");

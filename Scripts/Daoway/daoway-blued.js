@@ -509,7 +509,6 @@ async function runMatch(dwid, lat, lng) {
     // encryptId 仍由 create+query 换发; 跳转改用 Blued X 的 OpenInstall Universal Link
     // 用户实测精简 payload 可经 Safari 直达主页; 网页兜底可能显示“链接已过期”
     const opts = {};
-    let deepLink = "";
     try {
       const enc = await bluedEncUid(top.uid);
       // Env 语法: url 字段由 $.msg 负责按平台适配成 Surge {action:'open-url', url}/Loon openUrl/QX open-url
@@ -518,7 +517,6 @@ async function runMatch(dwid, lat, lng) {
       } });
       opts["url"] = "https://nk5oy5.oplinking.com/ulink/c/"
         + b64encode(utf8Encode(payload)).replace(/\+/g, "-").replace(/\//g, "_");
-      deepLink = "\n🔗 页面直达: app.blued.cn/user?id=" + enc + " (点通知跳 Blued)";
     } catch (e) { log("[到位×Blued] encryptId 换发失败, 通知不带跳转: " + (e && e.message || e)); }
     if (top.avatar && top.avatar.startsWith("http")) opts["media-url"] = top.avatar;
     $.msg(title, sub,
@@ -528,9 +526,9 @@ async function runMatch(dwid, lat, lng) {
           c.distance != null && Number(c.distance) < 9999 && "离你" + Number(c.distance).toFixed(1) + "km",
           Number(c.online) === 1 && "在线"].filter(Boolean).join(" ");
         return parts.join(" ") + "\n    " + body;
-      }).join("\n") + deepLink, opts);
+      }).join("\n"), opts);
   } else {
-    $.msg(title, sub, "Blued 附近没找到接近的人，先不推了");
+    $.msg(title, sub, "没找到匹配的人");
   }
 }
 
