@@ -44,11 +44,19 @@ sandbox.bluedNearby = async (filters, point) => {
 };
 const ratingCases = [
   ["资料与距离吻合", {}, {}, 3],
-  ["三星资料及距离边界", {}, { age: 25, height: 185, weight: 91, distance: 10.5 }, 3],
-  ["年龄差2", {}, { age: 26 }, 2],
-  ["身高差3", {}, { height: 186 }, 2],
+  ["累计资料误差降二星", {}, { age: 25, height: 185, weight: 91, distance: 10.5 }, 2, 48],
+  ["年龄差2已放宽", {}, { age: 26 }, 3, 90],
+  ["身高差3已放宽", {}, { height: 186 }, 3, 68],
   ["单项超出二星范围", {}, { height: 187 }, 0],
-  ["超过三星距离边界", {}, { distance: 10.500001 }, 2],
+  ["旧0.5km上限已放宽", {}, { distance: 10.500001 }, 3],
+  ["三项各差1及0.5km", {}, { age: 25, height: 184, weight: 89, distance: 10.5 }, 3, 70],
+  ["仅年龄差3", {}, { age: 27, distance: 10.2 }, 3, 84],
+  ["各差3且距离1km降二星", {}, { age: 27, height: 186, weight: 91, distance: 11 }, 2, 20],
+  ["三星60分及1km边界", {}, { age: 25, height: 184, weight: 89, distance: 11 }, 3, 60],
+  ["年龄3及1km外边界", {}, { age: 27, distance: 11 }, 3, 68],
+  ["高分不能抵消距离超1km", {}, { distance: 11.000001 }, 2],
+  ["高分不能抵消资料差超3", {}, { age: 28 }, 0],
+  ["缺项重新归一权重", {}, { age: null, height: 185, weight: 91 }, 2, 50.5],
   ["二星距离边界", {}, { distance: 12 }, 2],
   ["超过二星距离边界", {}, { distance: 12.000001 }, 0],
   ["距离差5不再三星", {}, { distance: 15 }, 0],
@@ -73,21 +81,28 @@ const ratingCases = [
   ["浮点边界", { distance: 1.9 }, { distance: 2.4 }, 3],
   ["数字字符串", {}, { age: "24", height: "183", weight: "88", distance: "10.1" }, 3],
 ];
-for (const [label, t, u, stars] of ratingCases) {
+for (const [label, t, u, stars, score] of ratingCases) {
   candidates = [{ ...user, ...u }];
   const { top } = await sandbox.matchTech({ ...tech, ...t }, geo);
   assert.equal(top[0]?.stars ?? 0, stars, label);
+  if (score != null) assert.equal(top[0]?.score, score, label + "：加权综合分");
 }
 assert.equal(lastFilters.age, "21-27");
 assert.equal(lastFilters.height, "180-186");
 assert.equal(lastFilters.weight, "85-91");
 
 candidates = [
-  { ...user, uid: "far", distance: 10.5 },
-  { ...user, uid: "near", age: 25, height: 184, weight: 89 },
-  { ...user, uid: "two-stars", distance: 11 },
+  { ...user, uid: "far", distance: 11 },
+  { ...user, uid: "near", age: 25 },
+  { ...user, uid: "two-stars", distance: 11.5 },
 ];
 assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "near,far", "同星综合排序，三星优先");
+candidates = [
+  { ...user, uid: "height", height: 186 },
+  { ...user, uid: "weight", weight: 91 },
+  { ...user, uid: "age", age: 27 },
+];
+assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "age,weight,height", "相同平均差按字段权重排序");
 candidates = [
   { ...user, uid: "partial", height: null },
   { ...user, uid: "unknown", distance: null },

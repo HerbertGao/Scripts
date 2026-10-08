@@ -410,9 +410,9 @@ function bluedEncUid(uid) {
 /**
  * 有什么查什么:
  *   - 技师缺某维度 → Blued filters 不带该维度, 打分也不计
- *   - 3⭐ 三项完整, 差值≤1岁/2cm/3kg, 距离差≤0.5km
+ *   - 3⭐ 三项完整且各差≤3, 距离差≤1km, 加权综合分≥60
  *   - 2⭐ 至少两项可比且各差≤3, 距离差≤2km; 距离未知最多2⭐
- *   - 同星先完整度和已知距离, 再综合归一化资料差与距离差; 1⭐ 不推
+ *   - 同星先完整度和已知距离, 再按综合分降序; 分数不是身份概率, 1⭐ 不推
  */
 async function matchTech(t, geo) {
   const filters = {
@@ -421,31 +421,33 @@ async function matchTech(t, geo) {
     time_span: "0-max", geo_reach: "0-max", filter_already_chatted: 0, online: 0,
   };
   const dims = [];
-  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 1]); }
-  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 3) + "-" + (t.ht + 3); dims.push(["height", t.ht, 2]); }
-  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 3) + "-" + (t.wt + 3); dims.push(["weight", t.wt, 3]); }
+  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 0.2]); }
+  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 3) + "-" + (t.ht + 3); dims.push(["height", t.ht, 0.5]); }
+  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 3) + "-" + (t.wt + 3); dims.push(["weight", t.wt, 0.3]); }
   if (!dims.length) return { top: [] };
   const cands = await bluedNearby(filters, geo);
   // ponytail: 原始 distance 沿用公里假设; 若接口单位核实为米, 换算后再评星。
   const td = parseDistance(t.distance);
   const scored = cands.map(u => {
-    let sum = 0, normalized = 0, n = 0, strong = true, weak = true;
-    for (const [k, v, limit] of dims) {
+    let sum = 0, weightedError = 0, weightSum = 0, n = 0, withinRange = true;
+    for (const [k, v, weight] of dims) {
       const uv = k === "age" ? parseInt(u.age, 10) : Number(u[k]);
       if (!Number.isFinite(uv) || uv <= 0) continue;
       const diff = Math.abs(uv - v);
-      sum += diff; normalized += diff / limit; n++;
-      strong = strong && diff <= limit;
-      weak = weak && diff <= 3;
+      sum += diff; weightedError += weight * diff / 3; weightSum += weight; n++;
+      withinRange = withinRange && diff <= 3;
     }
     const avg = n ? sum / n : 99;
     const bd = parseDistance(u.distance);
     const dGap = td != null && bd != null ? Number(Math.abs(bd - td).toFixed(6)) : null;
-    const stars = n === 3 && strong && dGap != null && dGap <= 0.5 ? 3 :
-                  n >= 2 && weak && (dGap == null || dGap <= 2) ? 2 : 1;
+    // 缺资料时按可比项重分配权重; 未知距离按2km计分, 且最高2⭐。
+    const error = 0.6 * (n ? weightedError / weightSum : 1) + 0.4 * (dGap == null ? 1 : dGap / 2);
+    const score = Math.max(0, Number((100 * (1 - error)).toFixed(6)));
+    const stars = n === 3 && withinRange && dGap != null && dGap <= 1 && score >= 60 ? 3 :
+                  n >= 2 && withinRange && (dGap == null || dGap <= 2) ? 2 : 1;
     return {
       uid: u.uid, name: u.name, stars, avg: Math.round(avg * 10) / 10,
-      compared: n, dGap, error: normalized / (n || 1) + (dGap == null ? 0 : dGap / 0.5),
+      compared: n, dGap, score,
       age: u.age, height: u.height, weight: u.weight, distance: u.distance,
       online: u.online_state, avatar: u.avatar,
     };
@@ -453,7 +455,7 @@ async function matchTech(t, geo) {
   // 只推高置信(3⭐); 一个都没有时放宽到 2⭐; 1⭐ 不推, 不凑数
   const bestStars = scored.some(c => c.stars === 3) ? 3 : 2;
   const top = scored.filter(c => c.stars === bestStars).sort((a, b) =>
-    b.compared - a.compared || Number(a.dGap == null) - Number(b.dGap == null) || a.error - b.error
+    b.compared - a.compared || Number(a.dGap == null) - Number(b.dGap == null) || b.score - a.score
   ).slice(0, 3);
   return { top };
 }
