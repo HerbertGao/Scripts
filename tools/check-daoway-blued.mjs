@@ -94,6 +94,7 @@ for (const [label, t, u, stars, score] of ratingCases) {
 assert.equal(lastFilters.age, "21-27");
 assert.equal(lastFilters.height, "178-188");
 assert.equal(lastFilters.weight, "83-93");
+assert.equal(lastFilters.tags, undefined, "不按体型标签过滤");
 
 candidates = [
   { ...user, uid: "far", distance: 11 },

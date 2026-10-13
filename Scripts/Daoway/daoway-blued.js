@@ -14,7 +14,6 @@ const DW = {
 const BLUED = {
   social: "https://social.irisgw.cn",
   live: "https://live.irisgw.cn",
-  tags: "3_6",
 };
 // encryptId 是服务端生成的(定性复现): ① POST token/create 口令 → ② GET token/query 抠 cuuid=短码
 // 二分试验结论: 这两个接口只需 authorization 一个头即可, 其余/签名时效均不校验(curl/bin 自证)
@@ -408,7 +407,7 @@ function bluedEncUid(uid) {
 async function matchTech(t, geo) {
   const filters = {
     filter_album_open: 0, condition: true, filter_new_user: 0, instant_status: 0,
-    tags: BLUED.tags, filter_register_time: "0-99", filter_real_switch: 0,
+    filter_register_time: "0-99", filter_real_switch: 0,
     time_span: "0-max", geo_reach: "0-max", filter_already_chatted: 0, online: 0,
   };
   const dims = [];
