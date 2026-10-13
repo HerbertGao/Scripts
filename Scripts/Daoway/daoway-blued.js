@@ -398,55 +398,48 @@ function bluedEncUid(uid) {
 /* ============ 匹配 ============ */
 
 /**
- * 有什么查什么:
- *   - 技师缺某维度 → Blued filters 不带该维度, 打分也不计
- *   - 3⭐ 三项完整且年龄差≤3、身高体重差≤5, 距离差≤1km, 加权综合分≥60
- *   - 2⭐ 至少两项可比且各差在上述容差内, 距离差≤2km; 距离未知最多2⭐
- *   - 同星先完整度和已知距离, 再按综合分降序; 分数不是身份概率, 1⭐ 不推
+ * 只推实报这一路, 不用差越小越靠前当唯一顺序:
+ *   - 年龄差≤2, 距离差≤2km 且距离已知; 身高体重差≤5
+ *   - 缺任一项或过不了门槛就不推, 不用陌生人凑第一个
+ *   - 通过者按年龄差、距离差、身高体重差排序, 最多三人; 点击打开第一个
+ *   - 按期望改数字的另一路还没方向, 先不发
  */
 async function matchTech(t, geo) {
+  const td = parseDistance(t.distance);
+  const ready = Number.isFinite(t.age) && t.age > 0 && Number.isFinite(t.ht) && t.ht > 0
+    && Number.isFinite(t.wt) && t.wt > 0 && td != null;
+  if (!ready) return { top: [] };
   const filters = {
     filter_album_open: 0, condition: true, filter_new_user: 0, instant_status: 0,
     filter_register_time: "0-99", filter_real_switch: 0,
     time_span: "0-max", geo_reach: "0-max", filter_already_chatted: 0, online: 0,
+    age: Math.max(18, t.age - 2) + "-" + (t.age + 2),
+    height: Math.max(140, t.ht - 5) + "-" + (t.ht + 5),
+    weight: Math.max(40, t.wt - 5) + "-" + (t.wt + 5),
   };
-  const dims = [];
-  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 0.2, 3]); }
-  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 5) + "-" + (t.ht + 5); dims.push(["height", t.ht, 0.5, 5]); }
-  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 5) + "-" + (t.wt + 5); dims.push(["weight", t.wt, 0.3, 5]); }
-  if (!dims.length) return { top: [] };
   const cands = await bluedNearby(filters, geo);
   // ponytail: 原始 distance 沿用公里假设; 若接口单位核实为米, 换算后再评星。
-  const td = parseDistance(t.distance);
   const scored = cands.map(u => {
-    let sum = 0, weightedError = 0, weightSum = 0, n = 0, withinRange = true;
-    for (const [k, v, weight, tol] of dims) {
-      const uv = k === "age" ? parseInt(u.age, 10) : Number(u[k]);
-      if (!Number.isFinite(uv) || uv <= 0) continue;
-      const diff = Math.abs(uv - v);
-      // 容差只卡门; 分母保持3, 差5仍比差3更扣分。
-      sum += diff; weightedError += weight * diff / 3; weightSum += weight; n++;
-      withinRange = withinRange && diff <= tol;
-    }
-    const avg = n ? sum / n : 99;
+    const age = parseInt(u.age, 10);
+    const height = Number(u.height);
+    const weight = Number(u.weight);
+    const ageDiff = Number.isFinite(age) && age > 0 ? Math.abs(age - t.age) : null;
+    const htDiff = Number.isFinite(height) && height > 0 ? Math.abs(height - t.ht) : null;
+    const wtDiff = Number.isFinite(weight) && weight > 0 ? Math.abs(weight - t.wt) : null;
     const bd = parseDistance(u.distance);
-    const dGap = td != null && bd != null ? Number(Math.abs(bd - td).toFixed(6)) : null;
-    // 缺资料时按可比项重分配权重; 未知距离按2km计分, 且最高2⭐。
-    const error = 0.6 * (n ? weightedError / weightSum : 1) + 0.4 * (dGap == null ? 1 : dGap / 2);
-    const score = Math.max(0, Number((100 * (1 - error)).toFixed(6)));
-    const stars = n === 3 && withinRange && dGap != null && dGap <= 1 && score >= 60 ? 3 :
-                  n >= 2 && withinRange && (dGap == null || dGap <= 2) ? 2 : 1;
+    const dGap = bd != null ? Number(Math.abs(bd - td).toFixed(6)) : null;
+    const pass = ageDiff != null && ageDiff <= 2 && htDiff != null && htDiff <= 5
+      && wtDiff != null && wtDiff <= 5 && dGap != null && dGap <= 2;
     return {
-      uid: u.uid, name: u.name, stars, avg: Math.round(avg * 10) / 10,
-      compared: n, dGap, score,
+      uid: u.uid, name: u.name,
+      stars: pass && ageDiff === 0 && dGap <= 0.5 ? 3 : pass ? 2 : 1,
+      ageDiff, dGap, bodyDiff: (htDiff ?? 99) + (wtDiff ?? 99),
       age: u.age, height: u.height, weight: u.weight, distance: u.distance,
       online: u.online_state, avatar: u.avatar,
     };
   });
-  // 只推高置信(3⭐); 一个都没有时放宽到 2⭐; 1⭐ 不推, 不凑数
-  const bestStars = scored.some(c => c.stars === 3) ? 3 : 2;
-  const top = scored.filter(c => c.stars === bestStars).sort((a, b) =>
-    b.compared - a.compared || Number(a.dGap == null) - Number(b.dGap == null) || b.score - a.score
+  const top = scored.filter(c => c.stars >= 2).sort((a, b) =>
+    a.ageDiff - b.ageDiff || a.dGap - b.dGap || a.bodyDiff - b.bodyDiff
   ).slice(0, 3);
   return { top };
 }

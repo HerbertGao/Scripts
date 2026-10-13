@@ -44,45 +44,26 @@ sandbox.bluedNearby = async (filters, point) => {
 };
 const ratingCases = [
   ["资料与距离吻合", {}, {}, 3],
-  ["累计资料误差降二星", {}, { age: 25, height: 185, weight: 91, distance: 10.5 }, 2, 48],
-  ["年龄差2已放宽", {}, { age: 26 }, 3, 90],
-  ["身高差3已放宽", {}, { height: 186 }, 3, 68],
-  ["身高差4按差值降二星", {}, { height: 187 }, 2, 58],
-  ["身高差5按差值降二星", {}, { height: 188 }, 2, 48],
-  ["身高差6不入选", {}, { height: 189 }, 0],
-  ["体重差5仍按差值计分", {}, { weight: 93 }, 3, 68],
-  ["体重差6不入选", {}, { weight: 94 }, 0],
-  ["旧0.5km上限已放宽", {}, { distance: 10.500001 }, 3],
-  ["三项各差1及0.5km", {}, { age: 25, height: 184, weight: 89, distance: 10.5 }, 3, 70],
-  ["仅年龄差3", {}, { age: 27, distance: 10.2 }, 3, 84],
-  ["各差3且距离1km降二星", {}, { age: 27, height: 186, weight: 91, distance: 11 }, 2, 20],
-  ["三星60分及1km边界", {}, { age: 25, height: 184, weight: 89, distance: 11 }, 3, 60],
-  ["年龄3及1km外边界", {}, { age: 27, distance: 11 }, 3, 68],
-  ["高分不能抵消距离超1km", {}, { distance: 11.000001 }, 2],
-  ["高分不能抵消资料差超3", {}, { age: 28 }, 0],
-  ["缺项重新归一权重", {}, { age: null, height: 185, weight: 91 }, 2, 50.5],
-  ["二星距离边界", {}, { distance: 12 }, 2],
-  ["超过二星距离边界", {}, { distance: 12.000001 }, 0],
-  ["距离差5不再三星", {}, { distance: 15 }, 0],
-  ["候选缺一项", {}, { height: null }, 2],
-  ["只有一项可比", {}, { height: null, weight: null }, 0],
-  ["零值不算可比资料", {}, { height: 0, weight: 0 }, 0],
-  ["无效值不算可比资料", {}, { height: "未知" }, 2],
-  ["技师缺一项", { wt: null }, {}, 2],
-  ["技师只有一项", { ht: null, wt: null }, {}, 0],
+  ["年龄差2仍推", {}, { age: 26 }, 2],
+  ["年龄差3不推", {}, { age: 27 }, 0],
+  ["身高差5仍推", {}, { height: 188 }, 3],
+  ["身高差6不推", {}, { height: 189 }, 0],
+  ["体重差5仍推", {}, { weight: 93 }, 3],
+  ["体重差6不推", {}, { weight: 94 }, 0],
+  ["距离差2仍推", {}, { distance: 12 }, 2],
+  ["距离差超过2不推", {}, { distance: 12.000001 }, 0],
+  ["身高更贴不能抵消年龄差3", {}, { age: 27, height: 183, weight: 88, distance: 10 }, 0],
+  ["缺身高不推", {}, { height: null }, 0],
+  ["零值不算", {}, { height: 0, weight: 0 }, 0],
+  ["无效身高不推", {}, { height: "未知" }, 0],
+  ["技师缺体重不推", { wt: null }, {}, 0],
   ["技师没有可比资料", { age: null, ht: null, wt: null }, {}, 0],
-  ["技师距离未知", { distance: null }, {}, 2],
-  ["技师负距离", { distance: -1 }, { distance: 1 }, 2],
-  ["技师空距离不是零", { distance: " " }, { distance: 0 }, 2],
-  ["技师隐藏距离", { distance: 9999 }, {}, 2],
-  ["候选距离未知", {}, { distance: null }, 2],
-  ["空距离不是零", {}, { distance: " " }, 2],
-  ["无效距离", {}, { distance: "未知" }, 2],
-  ["非有限距离", {}, { distance: Infinity }, 2],
-  ["负距离", {}, { distance: -1 }, 2],
-  ["隐藏距离", {}, { distance: 9999 }, 2],
+  ["技师距离未知不推", { distance: null }, {}, 0],
+  ["候选距离未知不推", {}, { distance: null }, 0],
+  ["空距离不是零", {}, { distance: " " }, 0],
+  ["隐藏距离不推", {}, { distance: 9999 }, 0],
   ["零距离有效", { distance: 0 }, { distance: 0 }, 3],
-  ["浮点边界", { distance: 1.9 }, { distance: 2.4 }, 3],
+  ["距离差0.5边界仍是三星", { distance: 1.9 }, { distance: 2.4 }, 3],
   ["数字字符串", {}, { age: "24", height: "183", weight: "88", distance: "10.1" }, 3],
 ];
 for (const [label, t, u, stars, score] of ratingCases) {
@@ -91,29 +72,17 @@ for (const [label, t, u, stars, score] of ratingCases) {
   assert.equal(top[0]?.stars ?? 0, stars, label);
   if (score != null) assert.equal(top[0]?.score, score, `${label}：加权综合分`);
 }
-assert.equal(lastFilters.age, "21-27");
+assert.equal(lastFilters.age, "22-26");
 assert.equal(lastFilters.height, "178-188");
 assert.equal(lastFilters.weight, "83-93");
 assert.equal(lastFilters.tags, undefined, "不按体型标签过滤");
 
 candidates = [
-  { ...user, uid: "far", distance: 11 },
-  { ...user, uid: "near", age: 25 },
-  { ...user, uid: "two-stars", distance: 11.5 },
+  { ...user, uid: "age-off", age: 27, distance: 10 },
+  { ...user, uid: "farther", distance: 10.8 },
+  { ...user, uid: "closer", age: 25, distance: 10.2 },
 ];
-assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "near,far", "同星综合排序，三星优先");
-candidates = [
-  { ...user, uid: "height", height: 186 },
-  { ...user, uid: "weight", weight: 91 },
-  { ...user, uid: "age", age: 27 },
-];
-assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "age,weight,height", "相同平均差按字段权重排序");
-candidates = [
-  { ...user, uid: "partial", height: null },
-  { ...user, uid: "unknown", distance: null },
-  { ...user, uid: "complete", age: 26, distance: 12 },
-];
-assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "complete,unknown,partial", "二星优先完整资料及已知距离");
+assert.equal((await sandbox.matchTech(tech, geo)).top.map(c => c.uid).join(","), "farther,closer", "先年龄差再距离差，年龄差3不推");
 candidates = [1, 2, 3, 4].map(i => ({ ...user, uid: String(i) }));
 assert.equal((await sandbox.matchTech(tech, geo)).top.length, 3, "最多三人，不凑一星");
 sandbox.bluedNearby = nearby;
