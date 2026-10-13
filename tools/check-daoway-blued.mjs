@@ -47,7 +47,11 @@ const ratingCases = [
   ["累计资料误差降二星", {}, { age: 25, height: 185, weight: 91, distance: 10.5 }, 2, 48],
   ["年龄差2已放宽", {}, { age: 26 }, 3, 90],
   ["身高差3已放宽", {}, { height: 186 }, 3, 68],
-  ["单项超出二星范围", {}, { height: 187 }, 0],
+  ["身高差4按差值降二星", {}, { height: 187 }, 2, 58],
+  ["身高差5按差值降二星", {}, { height: 188 }, 2, 48],
+  ["身高差6不入选", {}, { height: 189 }, 0],
+  ["体重差5仍按差值计分", {}, { weight: 93 }, 3, 68],
+  ["体重差6不入选", {}, { weight: 94 }, 0],
   ["旧0.5km上限已放宽", {}, { distance: 10.500001 }, 3],
   ["三项各差1及0.5km", {}, { age: 25, height: 184, weight: 89, distance: 10.5 }, 3, 70],
   ["仅年龄差3", {}, { age: 27, distance: 10.2 }, 3, 84],
@@ -88,8 +92,8 @@ for (const [label, t, u, stars, score] of ratingCases) {
   if (score != null) assert.equal(top[0]?.score, score, `${label}：加权综合分`);
 }
 assert.equal(lastFilters.age, "21-27");
-assert.equal(lastFilters.height, "180-186");
-assert.equal(lastFilters.weight, "85-91");
+assert.equal(lastFilters.height, "178-188");
+assert.equal(lastFilters.weight, "83-93");
 
 candidates = [
   { ...user, uid: "far", distance: 11 },

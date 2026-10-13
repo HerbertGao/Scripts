@@ -401,8 +401,8 @@ function bluedEncUid(uid) {
 /**
  * 有什么查什么:
  *   - 技师缺某维度 → Blued filters 不带该维度, 打分也不计
- *   - 3⭐ 三项完整且各差≤3, 距离差≤1km, 加权综合分≥60
- *   - 2⭐ 至少两项可比且各差≤3, 距离差≤2km; 距离未知最多2⭐
+ *   - 3⭐ 三项完整且年龄差≤3、身高体重差≤5, 距离差≤1km, 加权综合分≥60
+ *   - 2⭐ 至少两项可比且各差在上述容差内, 距离差≤2km; 距离未知最多2⭐
  *   - 同星先完整度和已知距离, 再按综合分降序; 分数不是身份概率, 1⭐ 不推
  */
 async function matchTech(t, geo) {
@@ -412,21 +412,22 @@ async function matchTech(t, geo) {
     time_span: "0-max", geo_reach: "0-max", filter_already_chatted: 0, online: 0,
   };
   const dims = [];
-  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 0.2]); }
-  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 3) + "-" + (t.ht + 3); dims.push(["height", t.ht, 0.5]); }
-  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 3) + "-" + (t.wt + 3); dims.push(["weight", t.wt, 0.3]); }
+  if (Number.isFinite(t.age) && t.age > 0) { filters.age = Math.max(18, t.age - 3) + "-" + (t.age + 3); dims.push(["age", t.age, 0.2, 3]); }
+  if (Number.isFinite(t.ht) && t.ht > 0) { filters.height = Math.max(140, t.ht - 5) + "-" + (t.ht + 5); dims.push(["height", t.ht, 0.5, 5]); }
+  if (Number.isFinite(t.wt) && t.wt > 0) { filters.weight = Math.max(40, t.wt - 5) + "-" + (t.wt + 5); dims.push(["weight", t.wt, 0.3, 5]); }
   if (!dims.length) return { top: [] };
   const cands = await bluedNearby(filters, geo);
   // ponytail: 原始 distance 沿用公里假设; 若接口单位核实为米, 换算后再评星。
   const td = parseDistance(t.distance);
   const scored = cands.map(u => {
     let sum = 0, weightedError = 0, weightSum = 0, n = 0, withinRange = true;
-    for (const [k, v, weight] of dims) {
+    for (const [k, v, weight, tol] of dims) {
       const uv = k === "age" ? parseInt(u.age, 10) : Number(u[k]);
       if (!Number.isFinite(uv) || uv <= 0) continue;
       const diff = Math.abs(uv - v);
+      // 容差只卡门; 分母保持3, 差5仍比差3更扣分。
       sum += diff; weightedError += weight * diff / 3; weightSum += weight; n++;
-      withinRange = withinRange && diff <= 3;
+      withinRange = withinRange && diff <= tol;
     }
     const avg = n ? sum / n : 99;
     const bd = parseDistance(u.distance);
