@@ -1,0 +1,10 @@
+#!url=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Surge/blued.follow.module
+#!name= Blued关注列表
+#!desc= 打开自己的主页时，关注数变了就拉完整名单；只有变少才通知是谁，带该人头像，点击跳进主页。消失不等于封号或注销，也可能是取关。
+#!category=HerbertGao's Scripts
+
+[Script]
+Blued关注列表 = type=http-response,pattern=^https:\/\/social\.irisgw\.cn\/users\/\d+$,requires-body=1,max-size=0,debug=0,timeout=30,script-path=https://raw.githubusercontent.com/HerbertGao/Scripts/dev/Scripts/Blued/blued.follow.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% social.irisgw.cn
